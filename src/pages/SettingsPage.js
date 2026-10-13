@@ -30,7 +30,7 @@ import { homeLayoutManager } from '../utils/HomeLayoutManager.js';
 import { sidebarLayoutManager } from '../utils/SidebarLayoutManager.js';
 import { eventBus } from '../core/EventBus.js';
 import { versionChecker } from '../utils/VersionChecker.js';
-import { settingsIcons, setIconStyle, getSupportedStyles } from '../utils/Icons.js';
+import { settingsIcons, sidebarIcons, setIconStyle, getSupportedStyles } from '../utils/Icons.js';
 import { toast } from '../ui/Toast.js';
 import { pinManager } from '../utils/PinManager.js';
 import { pinDialog } from '../ui/PinDialog.js';
@@ -38,6 +38,10 @@ import { seerr } from '../api/seerrClient.js';
 import { escapeHtml } from '../utils/Utils.js';
 import { watchProviderRegion, watchProviderRegionName } from '../utils/WatchProviders.js';
 import CardRenderer from '../utils/CardRenderer.js';
+import { dispatcharrClient } from '../api/DispatcharrClient.js';
+import { DTV_KEYS, DTV_SETTINGS_CHANGED, getStreamFormatSetting } from '../livetv/DtvSettings.js';
+import { normalizeBaseUrl } from '../livetv/DtvModel.js';
+import { errorMessage as dtvErrorMessage } from '../components/dtv/DtvTemplates.js';
 
 const log = logger.create('SettingsPage');
 
@@ -178,6 +182,12 @@ class SettingsPage extends Page {
                 icon: settingsIcons.controls
             },
             {
+                id: 'livetv',
+                label: i18n.t('DtvSettingsTab'),
+                desc: i18n.t('DtvSettingsTabDesc'),
+                icon: sidebarIcons.dtv
+            },
+            {
                 id: 'plugins',
                 label: i18n.t('Plugins'),
                 desc: i18n.t('SettingsDescPlugins') || 'Seerr media discovery and external extensions',
@@ -235,6 +245,13 @@ class SettingsPage extends Page {
     }
 
     render() {
+        // Deep link: /settings?tab=<id> opens a category directly (used by the IPTV page)
+        if (!this._tabParamApplied && this.params && this.params.tab) {
+            this._tabParamApplied = true;
+            if (this._getTabs().some((t) => t.id === this.params.tab)) {
+                this.activeTab = this.params.tab;
+            }
+        }
         const tabs = this._getTabs();
 
         return `
@@ -309,6 +326,8 @@ class SettingsPage extends Page {
                 return this._renderPerformanceTab();
             case 'controls':
                 return this._renderControlsTab();
+            case 'livetv':
+                return this._renderLiveTvTab();
             case 'plugins':
                 return this._renderPluginsTab();
             case 'libraries':
@@ -386,6 +405,159 @@ class SettingsPage extends Page {
                 </div>
             </div>
         `;
+    }
+
+    /**
+     * Render the Dispatcharr Live TV (IPTV) tab: server address, API key,
+     * connection test and stream format. Values are stored on the device
+     * under `dispatcharr:*` keys and never included in the settings backup.
+     * @private
+     */
+    _renderLiveTvTab() {
+        const url = storage.getItem(DTV_KEYS.URL) || '';
+        const apiKey = storage.getItem(DTV_KEYS.API_KEY) || '';
+        const formatOptions = [
+            { value: 'auto', label: i18n.t('DtvFormatAuto') },
+            { value: 'ts', label: i18n.t('DtvFormatTs') },
+            { value: 'fmp4', label: i18n.t('DtvFormatFmp4') }
+        ];
+        const inputStyle = `
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-size: 1rem;
+            width: 420px;
+        `;
+
+        return `
+            <div class="settings-tab-content">
+                <h2 class="content-title">${i18n.t('DtvSettingsTab')}</h2>
+                <p class="content-subtitle">${i18n.t('DtvSettingsIntro')}</p>
+
+                <h3 class="setting-section-title">${i18n.t('DtvSettingsSection')}</h3>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span class="setting-name">${i18n.t('DtvSettingsUrl')}</span>
+                        <span class="setting-description">${i18n.t('DtvSettingsUrlDesc')}</span>
+                    </div>
+                    <div class="setting-control">
+                        <input id="input-dtv-url" type="text" class="focusable" tabindex="0" data-focusable="true"
+                               readonly autocomplete="off" placeholder="http://192.168.1.10:9191"
+                               value="${escapeHtml(url)}" style="${inputStyle}"/>
+                    </div>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span class="setting-name">${i18n.t('DtvSettingsApiKey')}</span>
+                        <span class="setting-description">${i18n.t('DtvSettingsApiKeyDesc')}</span>
+                    </div>
+                    <div class="setting-control">
+                        <input id="input-dtv-api-key" type="password" class="focusable" tabindex="0" data-focusable="true"
+                               readonly autocomplete="off" value="${escapeHtml(apiKey)}" style="${inputStyle}"/>
+                    </div>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span class="setting-name">${i18n.t('DtvSettingsTest')}</span>
+                        <span class="setting-description" id="dtv-test-status">${i18n.t('DtvSettingsTestDesc')}</span>
+                    </div>
+                    <div class="setting-control">
+                        <button class="btn btn-primary btn-small focusable" id="dtv-test-btn" tabindex="0" data-focusable="true">
+                            ${i18n.t('DtvSettingsTest')}
+                        </button>
+                    </div>
+                </div>
+
+                <h3 class="setting-section-title">${i18n.t('DtvSettingsPlayback')}</h3>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span class="setting-name">${i18n.t('DtvSettingsFormat')}</span>
+                        <span class="setting-description">${i18n.t('DtvSettingsFormatDesc')}</span>
+                    </div>
+                    <div class="setting-control">
+                        ${this._renderDropdown('dtv-stream-format-select', formatOptions, getStreamFormatSetting())}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Wire the Live TV (IPTV) tab inputs. Uses the same TV keyboard pattern
+     * as the login page: inputs stay read-only while navigating, OK unlocks
+     * them and opens the on-screen keyboard, OK again (or leaving) saves.
+     * @private
+     */
+    _bindLiveTvSettings() {
+        const urlInput = this.$('#input-dtv-url');
+        const keyInput = this.$('#input-dtv-api-key');
+        const testBtn = this.$('#dtv-test-btn');
+        const status = this.$('#dtv-test-status');
+        if (!urlInput || !keyInput) return;
+
+        const save = () => {
+            const url = normalizeBaseUrl(urlInput.value);
+            const apiKey = keyInput.value.trim();
+            const changed =
+                url !== (storage.getItem(DTV_KEYS.URL) || '') || apiKey !== (storage.getItem(DTV_KEYS.API_KEY) || '');
+            if (!changed) return;
+            if (url) storage.setItem(DTV_KEYS.URL, url);
+            else storage.removeItem(DTV_KEYS.URL);
+            if (apiKey) storage.setItem(DTV_KEYS.API_KEY, apiKey);
+            else storage.removeItem(DTV_KEYS.API_KEY);
+            storage.flush();
+            if (url && urlInput.value !== url) urlInput.value = url;
+            eventBus.emit(DTV_SETTINGS_CHANGED);
+            log.info('Dispatcharr connection settings updated');
+        };
+
+        [urlInput, keyInput].forEach((input) => {
+            input.addEventListener('click', () => {
+                if (input.readOnly) {
+                    input.readOnly = false;
+                    input.focus();
+                }
+            });
+            input.addEventListener('keydown', (e) => {
+                if (!input.readOnly && (e.keyCode === 37 || e.keyCode === 39)) {
+                    // Let the cursor move inside the text while editing
+                    e.stopPropagation();
+                }
+                if (e.keyCode === 13 && !input.readOnly) {
+                    input.readOnly = true;
+                    input.blur();
+                    save();
+                }
+            });
+            input.addEventListener('change', save);
+            input.addEventListener('blur', () => {
+                setTimeout(() => {
+                    input.readOnly = true;
+                }, 200);
+                save();
+            });
+        });
+
+        if (testBtn && status) {
+            testBtn.addEventListener('click', async () => {
+                save();
+                const url = normalizeBaseUrl(urlInput.value);
+                const apiKey = keyInput.value.trim();
+                status.textContent = i18n.t('DtvSettingsTesting');
+                try {
+                    const result = await dispatcharrClient.testConnection(url, apiKey);
+                    status.textContent = i18n.t('DtvSettingsTestOk', [String(result.channelCount)]);
+                } catch (err) {
+                    status.textContent = dtvErrorMessage(err, url);
+                }
+            });
+        }
     }
 
     _renderPluginsTab() {
@@ -6665,7 +6837,9 @@ class SettingsPage extends Page {
                 if (
                     !excludedKeys.includes(key) &&
                     !key.startsWith('serverPlugin:available:') &&
-                    !key.startsWith('litefin:user_settings_')
+                    !key.startsWith('litefin:user_settings_') &&
+                    // Dispatcharr address and API key stay on this device
+                    !key.startsWith('dispatcharr:')
                 ) {
                     const value = storage.getItem(key);
                     if (value !== null) {
@@ -6808,7 +6982,9 @@ class SettingsPage extends Page {
                 if (
                     !excludedKeys.includes(key) &&
                     !key.startsWith('serverPlugin:available:') &&
-                    !key.startsWith('litefin:user_settings_')
+                    !key.startsWith('litefin:user_settings_') &&
+                    // Dispatcharr address and API key stay on this device
+                    !key.startsWith('dispatcharr:')
                 ) {
                     const value = storage.getItem(key);
                     if (value !== null) {
@@ -7385,6 +7561,9 @@ class SettingsPage extends Page {
     }
 
     _bindContentEvents() {
+        // Dispatcharr Live TV (IPTV) tab
+        this._bindLiveTvSettings();
+
         // Layout buttons
         this.$$('.layout-btn').forEach((btn) => {
             btn.addEventListener('click', () => {
@@ -10406,7 +10585,8 @@ class SettingsPage extends Page {
             'sidebar-items-align-select': { key: 'pref:sidebarItemsAlign', type: 'local', triggerEvent: true },
             'trending-movies-collection-select': { key: 'pref:trendingMoviesCollection', type: 'local', triggerEvent: true },
             'trending-series-collection-select': { key: 'pref:trendingSeriesCollection', type: 'local', triggerEvent: true },
-            'default-livetv-tab-select': { key: 'pref:defaultLiveTvTab', type: 'local' }
+            'default-livetv-tab-select': { key: 'pref:defaultLiveTvTab', type: 'local' },
+            'dtv-stream-format-select': { key: 'dispatcharr:streamFormat', type: 'local', triggerEvent: true }
         };
 
         this.$$('.select-btn').forEach((btn) => {

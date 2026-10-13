@@ -20,6 +20,7 @@
         "serve:normal": "webpack serve --config webpack.config.cjs --config-name normal",
         "serve:legacy": "webpack serve --config webpack.config.cjs --config-name legacy",
         "serve:ultra-legacy": "webpack serve --config webpack.config.cjs --config-name ultra-legacy",
+        "mock:dispatcharr": "node scripts/dev/mock-dispatcharr.mjs",
         "lint": "eslint src/",
         "lint:fix": "eslint src/ --fix",
         "format": "prettier --write src/",

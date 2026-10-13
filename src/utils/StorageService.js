@@ -124,6 +124,8 @@ class StorageService {
         if (key.startsWith('serverPlugin:available:')) return true;
         if (key.startsWith('litefin:user_settings_')) return true;
         if (key.startsWith('pin:')) return true;
+        // Dispatcharr Live TV settings belong to the device, not to a Jellyfin user
+        if (key.startsWith('dispatcharr:')) return true;
         return false;
     }
 
