@@ -43,6 +43,7 @@ import PlayerPage from '../pages/PlayerPage.js';
 import ProfilesPage from '../pages/ProfilesPage.js';
 import LiveTvPage from '../pages/LiveTvPage.js';
 import DtvPage from '../pages/DtvPage.js';
+import DtvPlayerPage from '../pages/DtvPlayerPage.js';
 import SlideshowPage from '../pages/SlideshowPage.js';
 import EmulatorPage from '../pages/EmulatorPage.js';
 import Sidebar from '../components/Sidebar.js';
@@ -397,6 +398,7 @@ class App {
         const isFullScreen =
             fullScreenRoutes.includes(path) ||
             path.startsWith('/player') ||
+            path.startsWith('/tv/play') ||
             path.startsWith('/slideshow') ||
             path.startsWith('/emulator');
 
@@ -1099,6 +1101,7 @@ class App {
         router.register('/settings', SettingsPage);
         router.register('/livetv', LiveTvPage);
         router.register('/tv', DtvPage); // Dispatcharr Live TV
+        router.register('/tv/play/:id', DtvPlayerPage); // Dispatcharr live player
         router.register('/offline', OfflinePage);
         router.register('/slideshow/:photoId', SlideshowPage);
         router.register('/player/:id/:resume', PlayerPage); // Video player page
