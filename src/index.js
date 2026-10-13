@@ -39,6 +39,7 @@ import './styles/pin-dialog.css'; /* Per-profile PIN entry keypad */
 import './styles/screensaver.css';
 import './styles/hero-carousel.css';
 import './styles/livetv.css';
+import './styles/dtv.css'; // Dispatcharr Live TV
 import './styles/slideshow.css'; // Full-screen photo viewer
 import './styles/rtl.css'; // Directional overrides
 import './themes/index.js'; // All shared themes

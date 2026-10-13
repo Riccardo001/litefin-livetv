@@ -135,6 +135,14 @@ class Sidebar extends Component {
                         <span class="item-text" data-i18n="LiveTV">Live TV</span>
                     </button>
 
+                    <!-- Dispatcharr Live TV (independent from Jellyfin Live TV) -->
+                    <button class="sidebar-item" id="sidebar-dtv" tabindex="0" data-path="/tv">
+                        <div class="item-icon">
+                            ${sidebarIcons.dtv}
+                        </div>
+                        <span class="item-text" data-i18n="DtvTitle">IPTV</span>
+                    </button>
+
                     <!-- Modern Libraries Accordion Toggle (Collections / Books Icon) -->
                     <button class="sidebar-item" id="sidebar-libraries" tabindex="0">
                         <div class="item-icon">

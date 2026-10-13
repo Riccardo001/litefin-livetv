@@ -1,0 +1,911 @@
+/**
+ * ============================================================================
+ * Litefin Tizen - Dispatcharr Live TV Styles
+ * ============================================================================
+ * Styles for the /tv page and the /tv/play live player.
+ *
+ * Constraints (Tizen 5.5 / webOS 5, Chromium 68-69, no autoprefixer):
+ *  - No flexbox `gap`, `aspect-ratio`, `inset`, `clamp()`, `:is()`,
+ *    `:focus-visible`, `backdrop-filter`, blur or heavy shadows.
+ *  - Only `transform` and `opacity` are animated.
+ *  - Row/column sizes below are mirrored by constants in the JS components
+ *    (DtvChannelList ROW_HEIGHT, DtvGuide ROW_HEIGHT).
+ *  - Every selector is scoped with the `dtv-` prefix.
+ * ============================================================================
+ */
+
+/* ============================================================================
+   Page Layout
+   ============================================================================ */
+
+.dtv-page {
+    background: var(--jf-background);
+    padding: 36px 48px 0 48px;
+    box-sizing: border-box;
+}
+
+.dtv-toolbar {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    height: 72px;
+}
+
+.dtv-views {
+    display: flex;
+    flex-shrink: 0;
+    padding: 6px;
+    margin-right: 24px;
+    border-radius: 100px;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.dtv-view-btn {
+    padding: 10px 28px;
+    margin-right: 4px;
+    border-radius: 100px;
+    border: 2px solid transparent;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--jf-text-secondary);
+    cursor: pointer;
+    outline: none;
+}
+
+.dtv-view-btn:last-child {
+    margin-right: 0;
+}
+
+.dtv-view-btn.active {
+    background: var(--jf-accent);
+    color: var(--jf-text-on-accent, #fff);
+}
+
+.dtv-view-btn.focused {
+    border-color: var(--jf-focus-border-color);
+    color: var(--jf-text-primary);
+}
+
+.dtv-view-btn.active.focused {
+    color: var(--jf-text-on-accent, #fff);
+}
+
+.dtv-groups-host {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    /* Leave room for Litefin's global clock (top right) */
+    margin-right: 150px;
+}
+
+.dtv-banner {
+    display: none;
+    flex-shrink: 0;
+    margin: 6px 0 4px 0;
+    padding: 10px 16px;
+    border-radius: 8px;
+    background: rgba(255, 170, 0, 0.14);
+    color: var(--jf-text-primary);
+    font-size: 1rem;
+}
+
+.dtv-banner.visible {
+    display: block;
+}
+
+.dtv-body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    margin-top: 12px;
+}
+
+.dtv-content-host {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* ============================================================================
+   Group Bar
+   ============================================================================ */
+
+.dtv-groupbar {
+    position: relative;
+    height: 100%;
+    overflow: hidden;
+}
+
+.dtv-groupbar-track {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+    transition: transform 0.2s ease-out;
+}
+
+.dtv-chip {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    height: 48px;
+    padding: 0 20px;
+    margin-right: 12px;
+    border-radius: 100px;
+    border: 2px solid transparent;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--jf-text-secondary);
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    outline: none;
+}
+
+.dtv-chip-count {
+    margin-left: 10px;
+    font-size: 0.9rem;
+    opacity: 0.7;
+}
+
+.dtv-chip.active {
+    background: rgba(var(--jf-accent-rgb, 0, 164, 220), 0.25);
+    color: var(--jf-text-primary);
+}
+
+.dtv-chip.focused {
+    border-color: var(--jf-focus-border-color);
+    color: var(--jf-text-primary);
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.dtv-chip.active.focused {
+    background: var(--jf-accent);
+    color: var(--jf-text-on-accent, #fff);
+}
+
+/* ============================================================================
+   Logos (shared)
+   ============================================================================ */
+
+.dtv-logo {
+    position: relative;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 8px;
+}
+
+.dtv-logo-fallback {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 800;
+    font-size: 1.3rem;
+    text-transform: uppercase;
+}
+
+.dtv-logo-img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+/* Logos sit on a neutral plate once loaded and replace the initials */
+.dtv-logo-img.loaded {
+    opacity: 1;
+    z-index: 1;
+    background: var(--jf-card-bg, #1a1a1a);
+}
+
+.dtv-logo-img.loaded + .dtv-logo-fallback {
+    display: none;
+}
+
+.dtv-logo-img.failed {
+    display: none;
+}
+
+/* ============================================================================
+   Channel List
+   ============================================================================ */
+
+.dtv-list {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+}
+
+.dtv-list-track {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    transition: transform 0.15s ease-out;
+    will-change: transform;
+}
+
+.dtv-list-track.no-anim {
+    transition: none;
+}
+
+.dtv-row {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 104px; /* = DtvChannelList ROW_HEIGHT */
+    display: flex;
+    align-items: center;
+    padding: 6px 0;
+    box-sizing: border-box;
+}
+
+.dtv-row-main {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    border-radius: 12px;
+    border: 2px solid transparent;
+    background: rgba(255, 255, 255, 0.04);
+    box-sizing: border-box;
+    cursor: pointer;
+    outline: none;
+}
+
+.dtv-row-main.focused {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: var(--jf-focus-border-color);
+}
+
+.dtv-row-number {
+    width: 70px;
+    flex-shrink: 0;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--jf-text-secondary);
+    text-align: right;
+    margin-right: 20px;
+}
+
+.dtv-row-logo {
+    width: 128px;
+    height: 72px;
+    margin-right: 24px;
+}
+
+.dtv-row-info {
+    flex: 1;
+    min-width: 0;
+    margin-right: 20px;
+}
+
+.dtv-row-name {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--jf-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dtv-row-program {
+    margin-top: 4px;
+    font-size: 1.05rem;
+    color: var(--jf-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dtv-row-time {
+    margin-right: 12px;
+    color: var(--jf-text-tertiary, var(--jf-text-secondary));
+}
+
+.dtv-row-next {
+    width: 30%;
+    flex-shrink: 0;
+    font-size: 1rem;
+    color: var(--jf-text-tertiary, var(--jf-text-secondary));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dtv-row-fav {
+    width: 72px;
+    height: 100%;
+    flex-shrink: 0;
+    margin-left: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    border: 2px solid transparent;
+    color: var(--jf-text-tertiary, var(--jf-text-secondary));
+    box-sizing: border-box;
+    cursor: pointer;
+    outline: none;
+}
+
+.dtv-row-fav.is-favorite {
+    color: #ffc83d;
+}
+
+.dtv-row-fav.focused {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: var(--jf-focus-border-color);
+    color: #ffc83d;
+}
+
+/* Progress bar (scaled with transform only) */
+.dtv-progress {
+    height: 4px;
+    margin-top: 8px;
+    border-radius: 2px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.dtv-progress-bar {
+    height: 100%;
+    background: var(--jf-accent);
+    transform-origin: 0 50%;
+    transform: scaleX(0);
+}
+
+/* ============================================================================
+   Guide Details Panel
+   ============================================================================ */
+
+.dtv-details {
+    display: none;
+    flex-shrink: 0;
+    height: 150px;
+    padding: 12px 4px 0 4px;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.dtv-view-guide .dtv-details {
+    display: block;
+}
+
+.dtv-details-channel {
+    font-size: 1rem;
+    color: var(--jf-text-secondary);
+}
+
+.dtv-details-title {
+    margin-top: 4px;
+    font-size: 1.7rem;
+    font-weight: 700;
+    color: var(--jf-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dtv-details-time {
+    margin-top: 2px;
+    font-size: 1.05rem;
+    color: var(--jf-accent);
+}
+
+.dtv-details-desc {
+    margin-top: 6px;
+    max-width: 1200px;
+    font-size: 1rem;
+    line-height: 1.4;
+    color: var(--jf-text-secondary);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* ============================================================================
+   EPG Guide
+   ============================================================================ */
+
+.dtv-guide {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.dtv-guide-head {
+    display: flex;
+    flex-shrink: 0;
+    height: 48px;
+    border-bottom: 2px solid var(--jf-divider);
+}
+
+.dtv-guide-corner {
+    width: 300px; /* channel column, see DtvGuide */
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding-left: 16px;
+    box-sizing: border-box;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--jf-text-primary);
+}
+
+.dtv-guide-timeline {
+    position: relative;
+    flex: 1;
+    overflow: hidden;
+}
+
+.dtv-guide-timeline-track {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    display: flex;
+    white-space: nowrap;
+}
+
+.dtv-guide-slot {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding-left: 10px;
+    box-sizing: border-box;
+    border-left: 1px solid var(--jf-divider);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--jf-text-secondary);
+}
+
+.dtv-guide-body {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+.dtv-guide-channels {
+    position: relative;
+    width: 300px; /* channel column, see DtvGuide */
+    flex-shrink: 0;
+    overflow: hidden;
+    border-right: 2px solid var(--jf-divider);
+}
+
+.dtv-guide-channels-track {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+}
+
+.dtv-guide-ch {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 84px; /* = DtvGuide ROW_HEIGHT */
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    box-sizing: border-box;
+    border-bottom: 1px solid var(--jf-divider);
+    border-left: 4px solid transparent;
+    cursor: pointer;
+    outline: none;
+}
+
+.dtv-guide-ch.focused {
+    background: rgba(255, 255, 255, 0.12);
+    border-left-color: var(--jf-accent);
+}
+
+.dtv-guide-ch-number {
+    width: 52px;
+    flex-shrink: 0;
+    margin-right: 10px;
+    text-align: right;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--jf-text-secondary);
+}
+
+.dtv-guide-logo {
+    width: 88px;
+    height: 50px;
+    margin-right: 12px;
+}
+
+.dtv-guide-ch-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--jf-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dtv-guide-grid {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.dtv-guide-grid-track {
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+.dtv-guide-row {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 84px; /* = DtvGuide ROW_HEIGHT */
+    border-bottom: 1px solid var(--jf-divider);
+}
+
+.dtv-cell {
+    position: absolute;
+    top: 5px;
+    bottom: 5px;
+    overflow: hidden;
+    border-radius: 8px;
+    border: 2px solid transparent;
+    border-left-color: rgba(0, 0, 0, 0.35);
+    background: rgba(255, 255, 255, 0.07);
+    box-sizing: border-box;
+    cursor: pointer;
+    outline: none;
+}
+
+.dtv-cell.is-now {
+    background: rgba(var(--jf-accent-rgb, 0, 164, 220), 0.28);
+}
+
+.dtv-cell.is-past {
+    opacity: 0.55;
+}
+
+.dtv-cell.is-empty {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.dtv-cell.focused {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: var(--jf-focus-border-color);
+    opacity: 1;
+    z-index: 2;
+}
+
+.dtv-cell.is-now.focused {
+    background: rgba(var(--jf-accent-rgb, 0, 164, 220), 0.5);
+}
+
+.dtv-cell-content {
+    padding: 10px 14px;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.dtv-cell-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--jf-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dtv-cell.is-empty .dtv-cell-title {
+    font-weight: 400;
+    color: var(--jf-text-tertiary, var(--jf-text-secondary));
+}
+
+.dtv-cell-time {
+    margin-top: 4px;
+    font-size: 0.9rem;
+    color: var(--jf-text-secondary);
+}
+
+.dtv-guide-now {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 3px;
+    margin-left: -1px;
+    background: var(--jf-accent);
+    z-index: 3;
+    pointer-events: none;
+}
+
+/* ============================================================================
+   State Panel (loading / empty / error / not configured)
+   ============================================================================ */
+
+.dtv-state {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0 80px;
+}
+
+.dtv-state.visible {
+    display: flex;
+}
+
+.dtv-state .loading-spinner {
+    margin-bottom: 24px;
+}
+
+.dtv-state-title {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--jf-text-primary);
+}
+
+.dtv-state-text {
+    margin-top: 12px;
+    max-width: 900px;
+    font-size: 1.15rem;
+    line-height: 1.5;
+    color: var(--jf-text-secondary);
+}
+
+.dtv-state-actions {
+    display: flex;
+    justify-content: center;
+    margin-top: 32px;
+}
+
+.dtv-state-btn {
+    margin: 0 8px;
+    padding: 12px 32px;
+    border-radius: 100px;
+    border: 2px solid transparent;
+    background: rgba(255, 255, 255, 0.1);
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--jf-text-primary);
+    cursor: pointer;
+    outline: none;
+}
+
+.dtv-state-btn.focused {
+    background: var(--jf-accent);
+    border-color: var(--jf-focus-border-color);
+    color: var(--jf-text-on-accent, #fff);
+}
+
+/* ============================================================================
+   Live Player
+   ============================================================================ */
+
+.dtv-player-page .player-container {
+    background: transparent;
+}
+
+.dtv-zap {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 80px 72px 56px 72px;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.75) 55%, rgba(0, 0, 0, 0) 100%);
+    opacity: 0;
+    transform: translate3d(0, 24px, 0);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.dtv-zap.visible {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+}
+
+.dtv-zap-clock {
+    position: absolute;
+    top: 24px;
+    right: 72px;
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.dtv-zap-channel {
+    display: flex;
+    align-items: center;
+}
+
+.dtv-zap-number {
+    min-width: 90px;
+    margin-right: 24px;
+    font-size: 3rem;
+    font-weight: 800;
+    color: #fff;
+}
+
+.dtv-zap-logo {
+    width: 160px;
+    height: 90px;
+    margin-right: 28px;
+}
+
+.dtv-zap-names {
+    min-width: 0;
+}
+
+.dtv-zap-name {
+    display: flex;
+    align-items: center;
+    font-size: 2.2rem;
+    font-weight: 800;
+    color: #fff;
+    white-space: nowrap;
+}
+
+.dtv-zap-fav {
+    display: flex;
+    margin-left: 14px;
+    color: #ffc83d;
+}
+
+.dtv-zap-list {
+    margin-top: 4px;
+    font-size: 1.1rem;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.dtv-zap-now {
+    margin-top: 24px;
+    max-width: 1300px;
+}
+
+.dtv-zap-now-line {
+    font-size: 1.5rem;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dtv-zap-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    margin-right: 12px;
+    border-radius: 4px;
+    background: var(--jf-accent);
+    font-size: 0.95rem;
+    font-weight: 800;
+    vertical-align: middle;
+}
+
+.dtv-zap-badge:empty {
+    display: none;
+}
+
+.dtv-zap-time {
+    margin-right: 14px;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.dtv-zap-title {
+    font-weight: 700;
+}
+
+.dtv-zap-now .dtv-progress {
+    margin-top: 12px;
+    height: 6px;
+}
+
+.dtv-zap-next {
+    margin-top: 14px;
+    font-size: 1.2rem;
+    color: rgba(255, 255, 255, 0.75);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dtv-zap-status {
+    display: none;
+    margin-top: 14px;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #ffc83d;
+}
+
+.dtv-player-message {
+    position: absolute;
+    top: 30%;
+    left: 50%;
+    width: 900px;
+    margin-left: -450px;
+    padding: 32px 40px;
+    border-radius: 16px;
+    background: rgba(0, 0, 0, 0.85);
+    text-align: center;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+    z-index: 11;
+}
+
+.dtv-player-message.visible {
+    opacity: 1;
+}
+
+.dtv-player-message-title {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.dtv-player-message-hint {
+    margin-top: 12px;
+    font-size: 1.15rem;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.dtv-zap-toast {
+    position: absolute;
+    top: 40px;
+    left: 50%;
+    width: 600px;
+    margin-left: -300px;
+    padding: 14px 24px;
+    border-radius: 100px;
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    font-size: 1.2rem;
+    font-weight: 700;
+    text-align: center;
+    opacity: 0;
+    transform: translate3d(0, -12px, 0);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    pointer-events: none;
+    z-index: 12;
+}
+
+.dtv-zap-toast.visible {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+}

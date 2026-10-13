@@ -42,6 +42,7 @@ import OfflinePage from '../pages/OfflinePage.js';
 import PlayerPage from '../pages/PlayerPage.js';
 import ProfilesPage from '../pages/ProfilesPage.js';
 import LiveTvPage from '../pages/LiveTvPage.js';
+import DtvPage from '../pages/DtvPage.js';
 import SlideshowPage from '../pages/SlideshowPage.js';
 import EmulatorPage from '../pages/EmulatorPage.js';
 import Sidebar from '../components/Sidebar.js';
@@ -394,7 +395,10 @@ class App {
         // showing the sidebar (which contains the active user's name) would be inconsistent.
         const fullScreenRoutes = ['/login', '/offline', '/profiles'];
         const isFullScreen =
-            fullScreenRoutes.includes(path) || path.startsWith('/player') || path.startsWith('/slideshow') || path.startsWith('/emulator');
+            fullScreenRoutes.includes(path) ||
+            path.startsWith('/player') ||
+            path.startsWith('/slideshow') ||
+            path.startsWith('/emulator');
 
         if (isFullScreen) {
             document.body.classList.add('no-sidebar');
@@ -1094,6 +1098,7 @@ class App {
         router.register('/favorites', FavoritesPage);
         router.register('/settings', SettingsPage);
         router.register('/livetv', LiveTvPage);
+        router.register('/tv', DtvPage); // Dispatcharr Live TV
         router.register('/offline', OfflinePage);
         router.register('/slideshow/:photoId', SlideshowPage);
         router.register('/player/:id/:resume', PlayerPage); // Video player page

@@ -20,7 +20,7 @@ const log = logger.create('SidebarLayoutManager');
 
 /**
  * The canonical ordered list of static sidebar items for Classic layout.
- * Order: user, home, discover, favorites, search, random, syncplay, livetv, settings, librariesContainer
+ * Order: user, home, discover, favorites, search, random, syncplay, livetv, dtv, settings, librariesContainer
  */
 const CLASSIC_STATIC_ITEMS = [
     /* User Profile */
@@ -33,13 +33,14 @@ const CLASSIC_STATIC_ITEMS = [
     { id: 'random', label: 'Random' },
     { id: 'syncplay', label: 'SyncPlay' },
     { id: 'livetv', label: 'Live TV', hidden: true },
+    { id: 'dtv', label: 'DtvTitle' },
     { id: 'settings', label: 'Settings' },
     { id: 'librariesContainer', label: 'Libraries' }
 ];
 
 /**
  * The canonical ordered list of static sidebar items for Modern layout.
- * Order: home, discover, favorites, search, random, syncplay, livetv, librariesContainer, settings
+ * Order: home, discover, favorites, search, random, syncplay, livetv, dtv, librariesContainer, settings
  * Note: 'user' is pinned in the bottom footer and excluded from the re-orderable list.
  */
 const MODERN_STATIC_ITEMS = [
@@ -50,6 +51,7 @@ const MODERN_STATIC_ITEMS = [
     { id: 'random', label: 'Random' },
     { id: 'syncplay', label: 'SyncPlay' },
     { id: 'livetv', label: 'Live TV', hidden: true },
+    { id: 'dtv', label: 'DtvTitle' },
     { id: 'librariesContainer', label: 'Libraries' },
     { id: 'settings', label: 'Settings' }
 ];
