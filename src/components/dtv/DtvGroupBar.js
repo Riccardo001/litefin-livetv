@@ -4,15 +4,14 @@
  * ============================================================================
  * Horizontal row of list "chips": All channels, Favorites, then the
  * Dispatcharr groups in their order. Moving focus onto a chip selects it
- * after a short pause (so holding Left/Right does not rebuild the list at
- * every step); OK selects immediately. The track slides with translate3d.
+ * right away (the list is virtualized, so a rebuild only renders the rows in
+ * view); OK jumps into the list. The track slides with translate3d.
  * ============================================================================
  */
 
 import { focusManager } from '../../ui/FocusManager.js';
 import { escapeHtml } from '../../utils/Utils.js';
 
-const SELECT_DELAY = 400;
 const EDGE_PADDING = 40;
 
 export default class DtvGroupBar {
@@ -30,7 +29,6 @@ export default class DtvGroupBar {
         this._lists = [];
         this._activeId = null;
         this._offset = 0;
-        this._selectTimer = null;
 
         this.container.innerHTML = '<div class="dtv-groupbar"><div class="dtv-groupbar-track"></div></div>';
         this._viewport = this.container.querySelector('.dtv-groupbar');
@@ -89,7 +87,6 @@ export default class DtvGroupBar {
     }
 
     destroy() {
-        clearTimeout(this._selectTimer);
         this._track.removeEventListener('click', this._onClick);
         focusManager.unregister(this.options.sectionName);
         this.container.innerHTML = '';
@@ -114,7 +111,7 @@ export default class DtvGroupBar {
         const next = direction === 'right' ? current.nextElementSibling : current.previousElementSibling;
         if (next) {
             this._focus(next);
-            this._scheduleSelect(next.dataset.list);
+            this._select(next.dataset.list, false);
             return true;
         }
         if (direction === 'left' && this.options.leaveLeft) {
@@ -150,13 +147,7 @@ export default class DtvGroupBar {
         }
     }
 
-    _scheduleSelect(id) {
-        clearTimeout(this._selectTimer);
-        this._selectTimer = setTimeout(() => this._select(id, false), SELECT_DELAY);
-    }
-
     _select(id, immediate) {
-        clearTimeout(this._selectTimer);
         if (!id) return;
         if (id === this._activeId && !immediate) return;
         this.setActive(id);
