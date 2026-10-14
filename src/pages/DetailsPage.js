@@ -249,7 +249,8 @@ class DetailsPage extends Page {
                     </div>
                     
                     <!-- Rich Metadata (Genres, People, Studios, Tags) -->
-                    <div id="rich-meta-container" class="media-row">
+                    <!-- Note: NOT marked as media-row to prevent aggressive 700px top-snapping on focus -->
+                    <div id="rich-meta-container">
                         <div class="details-rich-meta" id="rich-meta" tabindex="0"></div>
                     </div>
 
@@ -740,9 +741,10 @@ class DetailsPage extends Page {
             log.info(`[DetailsPage] Re-fetching item metadata and visual assets for ${this._itemId}`);
 
             // 1. Build metadata fields query
+            // Default to 'genres-studios-writers' to prevent loading excessive tags that bloat DOM
             const richMetadataStyle =
                 storage.getItem('pref:richMetadataStyle') ||
-                (storage.getItem('pref:hideRichMetadata') === 'true' ? 'none' : 'all');
+                (storage.getItem('pref:hideRichMetadata') === 'true' ? 'none' : 'genres-studios-writers');
             const hideRich = richMetadataStyle === 'none';
             const hideCast = storage.getItem('pref:hideCastSection') === 'true';
 
@@ -870,9 +872,11 @@ class DetailsPage extends Page {
             // ────────────────────────────────────────────────────────────────────────
             // 1. Fetch Base Item Details (blocking — page needs this to render)
             // ────────────────────────────────────────────────────────────────────────
+            // Build requested fields for base details fetch
+            // Default to 'genres-studios-writers' to avoid hundreds of tag chips on initial load
             const richMetadataStyle =
                 storage.getItem('pref:richMetadataStyle') ||
-                (storage.getItem('pref:hideRichMetadata') === 'true' ? 'none' : 'all');
+                (storage.getItem('pref:hideRichMetadata') === 'true' ? 'none' : 'genres-studios-writers');
             const hideRich = richMetadataStyle === 'none';
             const hideCast = storage.getItem('pref:hideCastSection') === 'true';
 
@@ -2091,10 +2095,11 @@ class DetailsPage extends Page {
 
     _renderRichMetadata() {
         // Retrieve setting to customize rich metadata fields display.
+        // Defaults to 'genres-studios-writers' to show key creators and studios while keeping layout lean.
         // Falls back to backward-compatible hideRichMetadata if new setting is not set.
         const richMetadataStyle =
             storage.getItem('pref:richMetadataStyle') ||
-            (storage.getItem('pref:hideRichMetadata') === 'true' ? 'none' : 'all');
+            (storage.getItem('pref:hideRichMetadata') === 'true' ? 'none' : 'genres-studios-writers');
         const isHidden = richMetadataStyle === 'none';
         let container = this.$('#rich-meta');
         const containerWrapper = this.$('#rich-meta-container');
@@ -2259,6 +2264,8 @@ class DetailsPage extends Page {
                 container.onkeydown = activateHandler;
 
                 // Register Focus Section
+                // Restrict section target specifically to the table container element (#rich-meta)
+                // so FocusManager returns the focusable unit in O(1) without querying or filtering child chips
                 const upwardLink =
                     this._getPreviousVisibleSection('details-rich-meta')?.targetName || 'details-actions';
                 const nextSection = this._getNextVisibleSection('details-rich-meta');
@@ -2266,6 +2273,7 @@ class DetailsPage extends Page {
 
                 this.registerFocusSection('details-rich-meta', this.$('#rich-meta-container'), {
                     orientation: 'vertical',
+                    selector: '#rich-meta',
                     leaveUp: upwardLink,
                     leaveDown: leaveDownTarget,
                     leaveLeft: 'sidebar',

@@ -1,33 +1,39 @@
-🚀
-
 # Litefin - GEMINI.md
 
 ## Project Overview
 
-Litefin is a high-performance, native Jellyfin client specifically engineered for **Samsung Tizen** (2015–present) and **LG webOS** (webOS 1.0–present) Smart TVs. Built purely in Vanilla JavaScript (ES6+) with zero heavy web frameworks, Litefin achieves near 60fps UI responsiveness and robust hardware-accelerated playback across diverse hardware generations through custom virtualized rendering, modular component lifecycle management, and a specialized multi-target compilation pipeline.
+Litefin is a high-performance, native Jellyfin client engineered for **Smart TVs** (Samsung Tizen 2015–present, LG webOS 1.0–present), **Android devices** (Android TV, Google TV, Fire TV, Android Mobile & Tablet via Tauri v2 + Media3 ExoPlayer), **Desktop environments** (Windows, Linux, macOS via Tauri v2), and **modern Web browsers** (via the official Jellyfin Web client plugin).
+
+Built purely in Vanilla JavaScript (ES6+) with zero heavy web frameworks, Litefin achieves butter-smooth 60fps UI responsiveness and robust hardware-accelerated playback across diverse hardware generations through custom virtualized rendering, modular component lifecycle management, and a specialized multi-target compilation pipeline.
 
 ### Core Technologies
 
 - **Vanilla JavaScript (ES6+)**: Pure JS architecture with no external UI framework overhead.
-- **Webpack 5 & Gulp 5**: Multi-target compilation generating 8 distinct hardware-tailored bundles.
-- **Tizen AVPlay & LG webOS Adapters**: Platform-native media pipeline integrations with hardware decoding.
+- **Webpack 5 & Gulp 5**: Multi-target compilation generating 8 distinct hardware-tailored Smart TV bundles.
+- **Tauri v2 (Rust Backend)**: Powers native cross-platform Desktop (Windows, Linux, macOS) and Android packages with minimal runtime footprint.
+- **5 Dedicated Playback Backends**:
+  - **Samsung Tizen (AVPlay)**: Native hardware pipeline via `webapis.avplay`.
+  - **LG webOS Player**: Hardware pipeline with webOS lifecycle synchronization.
+  - **Android Media3 ExoPlayer**: Direct bitstream multichannel passthrough (TrueHD, DTS-HD MA, Atmos) and hardware codec detection (`MediaCodecList`).
+  - **Desktop Movi Player**: WASM & WebCodecs engine (`movi-player`) with auto-fallback to HTML5.
+  - **Universal HTML5 Player**: Browser engine for web and fallback.
 - **Advanced Subtitle Engine**: WebAssembly-powered `libass` renderer (`@jellyfin/libass-wasm`), `assjs`, `libpgs` bitmap rendering, and custom subtitle styling.
 - **Virtualization & GPU Scrolling**: `VirtualCardRow`, `MediaGrid`, and `ScrollController` with DOM recycling for high-density libraries.
-- **Dynamic Theming**: CSS custom properties with ponyfills (`css-vars-ponyfill`) supporting custom TV skins and visual accents.
+- **Dynamic Theming**: CSS custom properties supporting custom skins, dynamic accents, and visual depths.
 
 ---
 
-## 8x Build & Hardware Strategy
+## Multi-Target Build Strategy
 
-Litefin produces 8 distinct package bundles to maximize performance on modern chipsets while retaining backwards compatibility down to legacy TV platforms:
-
-| Tier | Target Platforms & Versions | Engine / Transpilation Profile | Features & Optimizations |
+| Platform Tier | Target Platforms & Versions | Engine / Transpilation Profile | Features & Optimizations |
 | :--- | :--- | :--- | :--- |
-| **Modern** | Tizen 6.5+ (2021+), webOS 6.0+ (2021+) | Native ES6+, no transpilation | Full WebAssembly libass, native modern web APIs |
-| **Normal** | Tizen 5.0–6.0 (2019–2020), webOS 4.5–5.0 | Chromium 63+, partial transpilation | Optimized ES6 features, hardware AVPlay/webOS APIs |
-| **Legacy** | Tizen 3.0–4.0 (2017–2018), webOS 3.5–4.0 | Chromium 47, full ES5 Babel transpilation | Core-JS polyfills, legacy subtitle fallback |
-| **Ultra-Legacy** | Tizen 2.4 (2015–2016), webOS 1.0–3.0 | Chromium 32/38, heavy polyfills | `logger.js`, `style-loader` (CORS fix), no-service options |
-| **Debug** | Modern + Source Maps | Unminified + DevTools hooks | Runtime `DebugOverlay`, verbose logging, live metrics |
+| **TV Modern** | Tizen 6.5+ (2021+), webOS 22+ (6.0+) | Native ES6+, no transpilation | Full WebAssembly libass, native modern web APIs |
+| **TV Normal** | Tizen 5.0–6.0 (2019–2020), webOS 4.5–5.0 | Chromium 63+, partial transpilation | Optimized ES6 features, hardware AVPlay/webOS APIs |
+| **TV Legacy** | Tizen 3.0–4.0 (2017–2018), webOS 3.5–4.0 | Chromium 47, full ES5 Babel transpilation | Core-JS polyfills, legacy subtitle fallback |
+| **TV Ultra-Legacy** | Tizen 2.4 (2015–2016), webOS 1.0–3.0 | Chromium 32/38, heavy polyfills | `logger.js`, `style-loader` (CORS fix), no-service options |
+| **Android TV & Mobile** | Android 7.0+ (API 24+) | Tauri v2 + Kotlin/Java ExoPlayer | TrueHD/DTS/Atmos bitstream passthrough, AV1 fallback |
+| **Desktop** | Windows 10/11, Linux (X11/Wayland), macOS | Tauri v2 + Webview | Movi WASM/WebCodecs engine, window controls, hotkeys |
+| **Web Client Plugin** | Jellyfin Server (v10.8+) | Server-hosted static web bundle | Embedded directly at `http://<server-ip>:<port>/litefin` |
 
 ---
 
@@ -36,7 +42,8 @@ Litefin produces 8 distinct package bundles to maximize performance on modern ch
 ### Build Commands
 
 ```bash
-npm run build                 # Build all variants (Webpack multi-config)
+npm run build                 # Build all 6 webpack variants (multi-config)
+npm run build:desktop         # Webpack desktop bundle (Tauri webview target)
 npm run build:modern          # Build Modern variant (Tizen 6.5+ / webOS 6.0+)
 npm run build:normal          # Build Normal variant (Tizen 5.0+)
 npm run build:legacy          # Build Legacy variant (Tizen 3.0+)
@@ -48,36 +55,72 @@ npm run build:debug           # Build Modern debug variant with source maps
 ```bash
 npm run dev                   # Watch mode for Normal variant
 npm run serve                 # Webpack dev server (Debug variant)
+npm run serve:desktop         # Webpack dev server (Desktop/Tauri variant)
 npm run serve:modern          # Webpack dev server (Modern variant)
 npm run serve:normal          # Webpack dev server (Normal variant)
 npm run serve:legacy          # Webpack dev server (Legacy variant)
 npm run serve:ultra-legacy    # Webpack dev server (Ultra-Legacy variant)
 ```
 
-### Packaging (WGT & IPK)
+### Packaging
 
 ```bash
-npm run package                               # Build & package all variants (WGT + IPK)
-npm run package:tizen                         # Package all Tizen variants (.wgt)
-npm run package:webos                         # Package all webOS variants (.ipk)
+# Smart TVs - Combined Packages (Tizen WGT + webOS IPK)
+npm run package                               # Build & package all TV variants (8 packages)
 npm run package:modern                        # Combined Modern (Tizen WGT + webOS IPK)
 npm run package:normal                        # Combined Normal (Tizen WGT + webOS IPK)
 npm run package:legacy                        # Combined Legacy (Tizen WGT + webOS IPK)
-npm run package:ultra-legacy                  # Combined Ultra-Legacy (Tizen + webOS)
-npm run package:ultra-legacy-no-service       # Ultra-Legacy without background service
+npm run package:ultra-legacy                  # Combined Ultra-Legacy (Tizen WGT + webOS IPK)
+npm run package:ultra-legacy-no-service       # Combined Ultra-Legacy without discovery service
+
+# Smart TVs - Tizen Specific (.wgt)
+npm run package:tizen                         # Package all Tizen variants (.wgt)
 npm run package:tizen-modern                  # Tizen Modern package (.wgt)
 npm run package:tizen-normal                  # Tizen Normal package (.wgt)
-npm run package:tizen-normal-oblong           # Tizen Normal oblong variant
+npm run package:tizen-normal-oblong           # Tizen Normal oblong icon package (.wgt)
 npm run package:tizen-legacy                  # Tizen Legacy package (.wgt)
 npm run package:tizen-ultra-legacy            # Tizen Ultra-Legacy package (.wgt)
-npm run package:tizen-ultra-legacy-no-service # Tizen Ultra-Legacy without service
+npm run package:tizen-ultra-legacy-no-service # Tizen Ultra-Legacy without service (Tizen 2.4)
 npm run package:tizen-test                    # Tizen Test package (Litefin-Tizen-Test.wgt)
-npm run package:tizen-debug                   # Tizen Debug package (.wgt)
+npm run package:tizen-debug                   # Tizen Debug package with source maps (.wgt)
+
+# Smart TVs - webOS Specific (.ipk)
+npm run package:webos                         # Package all webOS variants (.ipk)
 npm run package:webos-modern                  # webOS Modern package (.ipk)
 npm run package:webos-normal                  # webOS Normal package (.ipk)
 npm run package:webos-legacy                  # webOS Legacy package (.ipk)
 npm run package:webos-ultra-legacy            # webOS Ultra-Legacy package (.ipk)
-npm run package:webos-ultra-legacy-no-service # webOS Ultra-Legacy without service
+npm run package:webos-ultra-legacy-no-service # webOS Ultra-Legacy without discovery service
+
+# Desktop (Tauri v2)
+npm run package:desktop                       # Host OS release bundle (.exe/.msi, .deb/.AppImage, .dmg)
+npm run package:desktop-debug                 # Host OS debug bundle with console logging enabled
+npm run package:windows                       # Windows release installer (_x64-setup.exe) & MSI (.msi)
+npm run package:windows-debug                 # Windows debug installer with DevTools
+npm run package:linux                         # Linux release package (.deb) & standalone (.AppImage)
+npm run package:linux-debug                   # Linux debug package (.deb) / (.AppImage)
+npm run package:macos                         # macOS release disk image (.dmg)
+npm run package:macos-debug                   # macOS debug disk image (.dmg)
+
+# Android (Tauri v2 + Media3 ExoPlayer)
+npm run package:android                       # Release APKs split per ABI (arm64, arm, x86_64, x86)
+npm run package:android-debug                 # Debug APKs split per ABI for local testing
+npm run package:android-universal             # Single universal release APK containing all ABIs
+npm run package:android-universal-debug       # Single universal debug APK containing all ABIs
+npm run package:android-bundle                # Android App Bundle (.aab) for Google Play Store
+npm run package:android-bundle-debug          # Android App Bundle (.aab) debug build
+npm run android:init                          # Initialize Tauri Android project configuration
+
+# Web Client Plugin (Jellyfin Server)
+npm run package:plugin                        # Standard Web Client Plugin zip (Litefin.Client.Plugin_*.zip)
+npm run package:plugin-normal                 # Normal variant plugin bundle
+npm run package:plugin-legacy                 # Legacy variant plugin bundle (ES5 transpiled)
+npm run package:plugin-ultra-legacy           # Ultra-Legacy variant plugin bundle (vintage polyfills)
+
+# Tauri & Versioning Utilities
+npm run sync:version                          # Synchronize version from package.json to manifests
+npm run tauri                                 # Direct Tauri CLI invocation
+npm run move:tauri                            # Move compiled Tauri artifacts to project root
 ```
 
 ### Quality & Maintenance
@@ -88,7 +131,7 @@ npm run lint:fix              # ESLint auto-fix
 npm run format                # Prettier write (src/)
 npm run format:check          # Prettier formatting check
 npm run test                  # Run Node test suite (node --test tests/*.test.js)
-npm run clean                 # Clean dist/, *.wgt, and *.ipk artifacts
+npm run clean                 # Clean dist/, *.wgt, *.ipk, *.apk, *.exe, *.msi, *.deb, *.AppImage, *.dmg, src-tauri/target/
 ```
 
 ### Localization
@@ -140,7 +183,9 @@ npm run locale:update         # Update localization coverage report
 - **Platform Players**:
   - `TizenAVPlayer`: Direct Samsung AVPlay hardware bindings for optimal 4K/HDR/codec throughput.
   - `WebOSPlayer`: LG webOS media pipeline integration with Luna service compatibility.
-  - `HtmlVideoPlayer`: Standard HTML5 `<video>` player fallback for desktop debugging.
+  - `ExoVideoPlayer`: Native Android Media3 ExoPlayer with multichannel TrueHD/DTS/Atmos bitstreaming.
+  - `MoviVideoPlayer`: Desktop WASM & WebCodecs engine (`movi-player`) with auto-fallback to HTML5.
+  - `HtmlVideoPlayer`: Standard HTML5 `<video>` player fallback and Jellyfin Web client engine.
 - **Subtitle Subsystem (`src/player/core/`)**:
   - `LibassWasmRenderer`: WebAssembly libass renderer for accurate ASS/SSA typesetting.
   - `ASSJSRenderer`: JavaScript ASS renderer for legacy engines without WebAssembly.
@@ -240,6 +285,8 @@ src/
 ├── player/
 │   ├── core/
 │   │   ├── JellyfinPlayer.js    # Primary media player orchestrator
+│   │   ├── ExoVideoPlayer.js    # Native Android Media3 ExoPlayer engine
+│   │   ├── MoviVideoPlayer.js   # Desktop WASM & WebCodecs engine
 │   │   ├── TizenAVPlayer.js     # Native Samsung AVPlay engine
 │   │   ├── WebOSPlayer.js       # Native LG webOS media engine
 │   │   ├── HtmlVideoPlayer.js   # HTML5 video fallback engine
@@ -267,8 +314,10 @@ src/
 ├── tizen/
 │   ├── TizenAdapter.js          # Samsung Tizen platform integration
 │   └── SmartHubManager.js       # Tizen SmartHub preview bar integration
-└── webos/
-    └── WebOSAdapter.js          # LG webOS platform integration
+├── webos/
+│   └── WebOSAdapter.js          # LG webOS platform integration
+├── src-tauri/                   # Tauri v2 Desktop & Android native configuration & bridge
+└── server-plugin/               # Litefin Client plugin for Jellyfin Server
 ```
 
 ---

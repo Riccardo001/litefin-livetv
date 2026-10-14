@@ -25,7 +25,7 @@ globalThis.document = {
     }
 };
 
-test('AspectRatioMenu: Omits Zoom option on Tizen and offers Auto, Video Aspect Ratio, and Stretch', async () => {
+test('AspectRatioMenu: Offers Zoom option on Tizen along with Auto, Video Aspect Ratio, and Stretch', async () => {
     // 1. Test Tizen platform detection
     globalThis.window.tizen = {};
     const { platformInfo } = await import('../src/utils/PlatformInfo.js');
@@ -50,8 +50,8 @@ test('AspectRatioMenu: Omits Zoom option on Tizen and offers Auto, Video Aspect 
 
     assert.deepStrictEqual(
         optionsOnTizen,
-        ['auto', 'video_aspect_ratio', 'stretch'],
-        'On Tizen AVPlay, AspectRatioMenu must offer Auto, Video Aspect Ratio, and Stretch (Zoom must be hidden)'
+        ['auto', 'zoom', 'video_aspect_ratio', 'stretch'],
+        'On Tizen AVPlay, AspectRatioMenu must offer Auto, Zoom, Video Aspect Ratio, and Stretch'
     );
 });
 
@@ -155,4 +155,115 @@ test('WebOSPlayer: Computes explicit layout bounding box geometry for auto, zoom
     assert.strictEqual(mockStyle.height, '1080px');
     assert.strictEqual(mockStyle.left, '-336px');
     assert.strictEqual(mockStyle.top, '0px');
+
+    // ------------------------------------------------------------------------
+    // Case 4: Transition from Stretch directly to Zoom
+    // ------------------------------------------------------------------------
+    // When previous mode was 'stretch', setting 'zoom' resets to auto first,
+    // ensuring right and bottom constraints from stretch are cleared.
+    player.setAspectRatio('stretch');
+    assert.strictEqual(mockStyle.right, '0px');
+    assert.strictEqual(mockStyle.bottom, '0px');
+
+    player.setAspectRatio('zoom');
+    assert.strictEqual(player.getAspectRatio(), 'zoom');
+    assert.strictEqual(mockStyle.width, '2592px');
+    assert.strictEqual(mockStyle.height, '1080px');
+    assert.strictEqual(mockStyle.left, '-336px');
+    assert.strictEqual(mockStyle.top, '0px');
+    assert.strictEqual(mockStyle.right, '');
+    assert.strictEqual(mockStyle.bottom, '');
+});
+
+test('TizenAVPlayer: Computes explicit display rect geometry for auto, zoom, stretch, and video_aspect_ratio modes', async () => {
+    // ------------------------------------------------------------------------
+    // Tizen AVPlay Architecture Verification
+    // ------------------------------------------------------------------------
+    // On Samsung Tizen TVs, AVPlay renders video via a hardware overlay plane.
+    // CSS object-fit cannot be applied to this video plane.
+    // Verify that TizenAVPlayer calculates and applies explicit layout bounding
+    // box dimensions (x, y, width, height) and hardware display methods.
+    // ------------------------------------------------------------------------
+
+    // Dynamically import TizenAVPlayer backend
+    const { TizenAVPlayer } = await import('../src/player/core/TizenAVPlayer.js');
+
+    // Mock webapis.avplay hardware interface
+    let lastRect = null;
+    let lastMethod = null;
+    const methodCalls = [];
+    const mockAvplay = {
+        setDisplayRect: (x, y, w, h) => {
+            lastRect = { x, y, width: w, height: h };
+        },
+        setDisplayMethod: (method) => {
+            lastMethod = method;
+            methodCalls.push(method);
+        },
+        getCurrentStreamInfo: () => [
+            {
+                type: 'VIDEO',
+                extra_info: JSON.stringify({ Width: 1920, Height: 800 })
+            }
+        ]
+    };
+
+    // Mock container representing a standard 1080p display viewport (1920x1080)
+    const mockContainer = {
+        clientWidth: 1920,
+        clientHeight: 1080,
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 1920, height: 1080 })
+    };
+
+    // Instantiate TizenAVPlayer instance with mock container and mock avplay
+    const player = new TizenAVPlayer({ container: mockContainer });
+    player._avplay = mockAvplay;
+
+    // ------------------------------------------------------------------------
+    // Case 1: Fullscreen Stretch Mode
+    // ------------------------------------------------------------------------
+    player.setAspectRatio('stretch');
+    assert.strictEqual(player.getAspectRatio(), 'stretch');
+    assert.deepStrictEqual(lastRect, { x: 0, y: 0, width: 1920, height: 1080 });
+    assert.strictEqual(lastMethod, 'PLAYER_DISPLAY_MODE_FULL_SCREEN');
+
+    // ------------------------------------------------------------------------
+    // Case 2: Auto (Letterbox / Contain) Mode
+    // ------------------------------------------------------------------------
+    player.setAspectRatio('auto');
+    assert.strictEqual(player.getAspectRatio(), 'auto');
+    assert.deepStrictEqual(lastRect, { x: 0, y: 0, width: 1920, height: 1080 });
+    assert.strictEqual(lastMethod, 'PLAYER_DISPLAY_MODE_LETTER_BOX');
+
+    // ------------------------------------------------------------------------
+    // Case 3: Video Aspect Ratio Mode (Hardware DAR/PAR)
+    // ------------------------------------------------------------------------
+    player.setAspectRatio('video_aspect_ratio');
+    assert.strictEqual(player.getAspectRatio(), 'video_aspect_ratio');
+    assert.deepStrictEqual(lastRect, { x: 0, y: 0, width: 1920, height: 1080 });
+    assert.strictEqual(lastMethod, 'PLAYER_DISPLAY_MODE_AUTO_ASPECT_RATIO');
+
+    // ------------------------------------------------------------------------
+    // Case 4: Zoom (Crop / Cover) Mode
+    // ------------------------------------------------------------------------
+    // Scale = max(1920/1920, 1080/800) = 1.35
+    // Width = round(1920 * 1.35) = 2592px, Height = round(800 * 1.35) = 1080px
+    // Left = round((1920 - 2592) / 2) = -336px, Top = 0px
+    player.setAspectRatio('zoom');
+    assert.strictEqual(player.getAspectRatio(), 'zoom');
+    assert.deepStrictEqual(lastRect, { x: -336, y: 0, width: 2592, height: 1080 });
+    assert.strictEqual(lastMethod, 'PLAYER_DISPLAY_MODE_LETTER_BOX');
+
+    // ------------------------------------------------------------------------
+    // Case 5: Transition from Stretch directly to Zoom
+    // ------------------------------------------------------------------------
+    // When previous mode was 'stretch', setting 'zoom' resets to 'auto' first
+    // (clearing FULL_SCREEN stretch deformation) before applying the zoom crop.
+    player.setAspectRatio('stretch');
+    methodCalls.length = 0;
+    player.setAspectRatio('zoom');
+    assert.strictEqual(player.getAspectRatio(), 'zoom');
+    assert.deepStrictEqual(methodCalls, ['PLAYER_DISPLAY_MODE_LETTER_BOX', 'PLAYER_DISPLAY_MODE_LETTER_BOX']);
+    assert.deepStrictEqual(lastRect, { x: -336, y: 0, width: 2592, height: 1080 });
+    assert.strictEqual(lastMethod, 'PLAYER_DISPLAY_MODE_LETTER_BOX');
 });

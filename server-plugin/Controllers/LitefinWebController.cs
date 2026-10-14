@@ -141,6 +141,36 @@ public class LitefinWebController : ControllerBase
         }
 
         // ====================================================================
+        // Nested Asset Fallback Resolution
+        // ====================================================================
+        // When stylesheets or scripts live in nested folders (such as css/ or js/),
+        // any relative asset references (like font files or images) that omit the
+        // parent directory traversal may arrive at the server with a leading "css/"
+        // or "js/" prefix (e.g. "css/assets/fonts/Poppins.woff2").
+        // To guarantee fonts and icons always load reliably regardless of client
+        // bundle configuration, test if stripping the subfolder prefix yields a valid file.
+        if (requestedPath.StartsWith("css/assets/", StringComparison.OrdinalIgnoreCase))
+        {
+            // Strip leading "css/" segment to reach the root "assets/..." path
+            var fallbackRelative = requestedPath.Substring(4);
+            if (TryResolvePath(webRoot, fallbackRelative, out var fallbackPath) && System.IO.File.Exists(fallbackPath))
+            {
+                // Serve the existing root asset with correct MIME type
+                return PhysicalFile(fallbackPath, GetContentType(fallbackPath));
+            }
+        }
+        else if (requestedPath.StartsWith("js/assets/", StringComparison.OrdinalIgnoreCase))
+        {
+            // Strip leading "js/" segment to reach the root "assets/..." path
+            var fallbackRelative = requestedPath.Substring(3);
+            if (TryResolvePath(webRoot, fallbackRelative, out var fallbackPath) && System.IO.File.Exists(fallbackPath))
+            {
+                // Serve the existing root asset with correct MIME type
+                return PhysicalFile(fallbackPath, GetContentType(fallbackPath));
+            }
+        }
+
+        // ====================================================================
         // Directory Subpath Normalization
         // ====================================================================
         if (Directory.Exists(fullPath))

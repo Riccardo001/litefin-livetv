@@ -27,6 +27,7 @@ import { api } from '../../api/index.js';
 import { storage } from '../../utils/StorageService.js';
 import { prewarmManager } from './PrewarmManager.js';
 import { languageManager } from '../../utils/LanguageManager.js';
+import { AUDIO_FALLBACK_STORAGE_KEYS } from '../../utils/AudioFallbackConfig.js';
 
 const log = logger.create('JellyfinPlayer');
 
@@ -559,46 +560,74 @@ export function resolveBestAudioStream(mediaSource, targetLang, backendType = nu
     // Check user preferred audio language from explicit argument or local persistent storage
     const userPrefLang = storage.getItem('pref:audioLang');
     const explicitTargetLang = (targetLang && targetLang !== 'Default' && targetLang !== 'none') ? targetLang : null;
-    const preferredLanguage = explicitTargetLang || (userPrefLang && userPrefLang !== 'Default' && userPrefLang !== 'none' ? userPrefLang : null);
+
+    // Helper that selects the best track for a given language using the existing DirectPlay /
+    // quality scoring rules. Returns null when no audio track matches the requested language.
+    const selectTrackForLanguage = (lang) => {
+        const matchingTracks = audioStreams.filter((t) => isLanguageMatch(t.Language, lang));
+        if (matchingTracks.length === 0) return null;
+
+        if (preferDirectPlay) {
+            // Prefer natively playable (DirectPlay) tracks within the target language pool.
+            const playablePreferred = matchingTracks.filter((t) => isAudioTrackNativelyPlayable(t, mediaSource, backendType));
+            if (playablePreferred.length > 0) return pickBestTrack(playablePreferred);
+
+            // None of the target-language tracks can DirectPlay natively on this device.
+            // CRITICAL: Do NOT jump to a foreign language just to DirectPlay. Stay in the
+            // requested language and select the highest quality stream for transcoding/remux.
+            return pickBestTrack(matchingTracks);
+        }
+
+        // DirectPlay preference disabled; pick the highest fidelity track in the target language.
+        return pickBestTrack(matchingTracks);
+    };
+
+    // Build the ordered language priority chain to attempt, highest priority first:
+    //  - An explicit one-off target language takes precedence and is the ONLY candidate
+    //    (global user preferences are never consulted for an explicit override).
+    //  - Otherwise: the global preferred audio language first, followed by each configured
+    //    fallback language (rows 1 -> 3) that has a track matching the media.
+    let languageChain = [];
+    if (explicitTargetLang) {
+        languageChain = [explicitTargetLang];
+    } else {
+        const globalPref = (userPrefLang && userPrefLang !== 'Default' && userPrefLang !== 'none') ? userPrefLang : null;
+        if (globalPref) languageChain.push(globalPref);
+
+        // Fallback slots in priority order (derived from a single shared constant so the
+        // settings UI rows and this playback chain can never drift out of sync).
+        for (const key of AUDIO_FALLBACK_STORAGE_KEYS) {
+            const value = storage.getItem(key);
+            if (value && value !== 'Default' && value !== 'none') {
+                languageChain.push(value);
+            }
+        }
+    }
+
+    // Deduplicate the chain by normalized lowercase code to avoid redundant work / repeated logs.
+    const seenLanguages = new Set();
+    languageChain = languageChain.filter((lang) => {
+        const id = String(lang).trim().toLowerCase();
+        if (seenLanguages.has(id)) return false;
+        seenLanguages.add(id);
+        return true;
+    });
 
     // -------------------------------------------------------------------------
-    // 7. Branch A: Preferred Audio Language is Configured
+    // 7. Branch A: Preferred / Fallback Audio Language Resolution
     // -------------------------------------------------------------------------
-    // When a preferred language is explicitly configured by the user, ignore the container's
-    // default track if it is in another language. Then combine with DirectPlay optimization:
-    // search for natively playable tracks within the preferred language pool.
-    if (preferredLanguage) {
-        const preferredTracks = audioStreams.filter((t) => isLanguageMatch(t.Language, preferredLanguage));
-
-        if (preferredTracks.length > 0) {
-            let chosenTrack = null;
-
-            if (preferDirectPlay) {
-                // Filter candidate preferred tracks that can DirectPlay natively without server transcoding
-                const playablePreferred = preferredTracks.filter((t) => isAudioTrackNativelyPlayable(t, mediaSource, backendType));
-
-                if (playablePreferred.length > 0) {
-                    // Pick the highest quality DirectPlay track matching the preferred language
-                    chosenTrack = pickBestTrack(playablePreferred);
-                } else {
-                    // None of the preferred language tracks can DirectPlay natively on this device.
-                    // CRITICAL: Do NOT jump to a foreign language just to DirectPlay. Stay in the
-                    // user's requested language and select the highest quality stream for transcoding/remux.
-                    chosenTrack = pickBestTrack(preferredTracks);
-                }
-            } else {
-                // DirectPlay preference disabled; pick the highest fidelity track in the preferred language
-                chosenTrack = pickBestTrack(preferredTracks);
-            }
-
-            if (chosenTrack) {
-                log.info(
-                    `[AudioTrackSelector] Selected audio track Index ${chosenTrack.Index} ` +
-                    `(${chosenTrack.Codec}, ${chosenTrack.Channels || 2}ch, ${chosenTrack.Language || 'und'}) ` +
-                    `matching preferred language '${preferredLanguage}' (container default was Index ${standardDefaultTrack?.Index})`
-                );
-                return chosenTrack;
-            }
+    // Walk the priority chain and select the first language that has a matching audio track,
+    // applying the DirectPlay / quality rules above. When no candidate matches, fall through to
+    // Branch B (container default behavior) unchanged.
+    for (const lang of languageChain) {
+        const chosenTrack = selectTrackForLanguage(lang);
+        if (chosenTrack) {
+            log.info(
+                `[AudioTrackSelector] Selected audio track Index ${chosenTrack.Index} ` +
+                `(${chosenTrack.Codec}, ${chosenTrack.Channels || 2}ch, ${chosenTrack.Language || 'und'}) ` +
+                `matching language '${lang}' (container default was Index ${standardDefaultTrack?.Index})`
+            );
+            return chosenTrack;
         }
     }
 

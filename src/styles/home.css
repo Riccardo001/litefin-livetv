@@ -8,6 +8,20 @@
     padding: 0;
     /* Ensure browser leaves space for top padding when scrolling items into focus */
     scroll-padding-top: 40px;
+
+    /*
+     * GPU Compositor Optimization (Tizen 9 / Chromium 120+):
+     * Overrides the global .page-content transform: translateZ(0) and
+     * will-change: scroll-position. On modern Chromium engines, those layerization
+     * hints force an oversized composite layer for the entire scroll container that
+     * must be invalidated and re-rasterized on every frame of programmatic scrollTop
+     * adjustments during vertical navigation between the hero carousel and rows.
+     * Letting the browser manage native overflow-y scrolling directly eliminates
+     * composite pipeline stalls and yields fluid 60fps movement.
+     */
+    transform: none;
+    -webkit-transform: none;
+    will-change: auto;
 }
 
 .home-rows {
@@ -24,6 +38,16 @@
     /* Prevent skeleton from participating in the layout offset cache —
        its height may differ slightly from the real row before data loads. */
     pointer-events: none;
+}
+
+/* Static theme overrides for placeholder skeleton cards.
+   Eliminates the need to dynamically inject and remove inline style tags at runtime. */
+.media-row--skeleton .card-image,
+.media-row--skeleton .skeleton-image,
+.media-row--skeleton .skeleton-line {
+    background-color: rgba(var(--jf-primary-btn-color-rgb, 255, 255, 255), 0.6) !important;
+    background-image: none !important;
+    animation: none !important;
 }
 
 /* 

@@ -235,88 +235,232 @@ export class TizenAVPlayer {
     // ========================================================================
 
     /**
+     * Retrieve active video stream dimensions from hardware stream info or media source metadata.
+     *
+     * @private
+     * @returns {{width: number, height: number}} Intrinsic stream pixel width and height
+     */
+    _getVideoDimensions() {
+        let vw = 0;
+        let vh = 0;
+
+        // --------------------------------------------------------------------
+        // 1. Hardware Stream Inspection
+        // --------------------------------------------------------------------
+        // Query the live AVPlay hardware pipeline for active stream descriptors
+        if (this._avplay && typeof this._avplay.getCurrentStreamInfo === 'function') {
+            try {
+                const streamInfo = this._avplay.getCurrentStreamInfo();
+                if (Array.isArray(streamInfo)) {
+                    // Locate the active video stream descriptor in the hardware pipeline
+                    const videoStream = streamInfo.find(
+                        (s) => s && s.type && s.type.toUpperCase() === 'VIDEO'
+                    );
+                    if (videoStream && videoStream.extra_info) {
+                        // Tizen may return extra_info as an already-parsed object or as a JSON string
+                        const extra = typeof videoStream.extra_info === 'string'
+                            ? JSON.parse(videoStream.extra_info)
+                            : videoStream.extra_info;
+                        vw = Number(extra.Width || extra.width || 0);
+                        vh = Number(extra.Height || extra.height || 0);
+                    }
+                }
+            } catch (e) {
+                log.debug('Could not query hardware stream info via getCurrentStreamInfo:', e);
+            }
+        }
+
+        // --------------------------------------------------------------------
+        // 2. Play Options MediaSource Inspection
+        // --------------------------------------------------------------------
+        // Fall back to server media stream metadata supplied in playback options
+        if (!vw || !vh) {
+            const mediaSource = this._currentPlayOptions?.mediaSource;
+            if (mediaSource) {
+                if (mediaSource.Width && mediaSource.Height) {
+                    vw = Number(mediaSource.Width);
+                    vh = Number(mediaSource.Height);
+                } else if (Array.isArray(mediaSource.MediaStreams)) {
+                    const videoStream = mediaSource.MediaStreams.find((s) => s && s.Type === 'Video');
+                    if (videoStream && videoStream.Width && videoStream.Height) {
+                        vw = Number(videoStream.Width);
+                        vh = Number(videoStream.Height);
+                    }
+                }
+            }
+        }
+
+        // --------------------------------------------------------------------
+        // 3. Play Options Item Metadata Inspection
+        // --------------------------------------------------------------------
+        // If media source metadata is absent, check top-level item stream definitions
+        if (!vw || !vh) {
+            const item = this._currentPlayOptions?.item;
+            const streams = item?.MediaStreams || item?.MediaSources?.[0]?.MediaStreams;
+            if (Array.isArray(streams)) {
+                const videoStream = streams.find((s) => s && s.Type === 'Video');
+                if (videoStream && videoStream.Width && videoStream.Height) {
+                    vw = Number(videoStream.Width);
+                    vh = Number(videoStream.Height);
+                }
+            }
+        }
+
+        return { width: vw, height: vh };
+    }
+
+    /**
+     * Compute and apply hardware-backed video plane layout geometry based on active aspect ratio mode.
+     *
+     * Samsung Tizen AVPlay does not support CSS object-fit on its underlying hardware overlay plane.
+     * To achieve a seamless crop/zoom effect without distortion:
+     * - We calculate the uniform magnification factor using Math.max(containerWidth / videoWidth, containerHeight / videoHeight)
+     * - We center the scaled dimensions across the viewport using symmetric negative coordinate offsets
+     * - We push the calculated rectangle to AVPlay via setDisplayRect with PLAYER_DISPLAY_MODE_FULL_SCREEN
+     * - The TV hardware video subsystem naturally clips the off-screen margins at physical display edges
+     *
+     * @private
+     */
+    _applyDisplayGeometry() {
+        if (!this._avplay) return;
+
+        // Extract container bounds in current DOM coordinate space
+        const rect = (this.container && typeof this.container.getBoundingClientRect === 'function')
+            ? this.container.getBoundingClientRect()
+            : null;
+        const cw = (rect && rect.width) || (this.container && this.container.clientWidth) || (typeof window !== 'undefined' ? window.innerWidth : 1920) || 1920;
+        const ch = (rect && rect.height) || (this.container && this.container.clientHeight) || (typeof window !== 'undefined' ? window.innerHeight : 1080) || 1080;
+        const cLeft = (rect && rect.left) || 0;
+        const cTop = (rect && rect.top) || 0;
+
+        const mode = this._aspectRatio || 'auto';
+
+        try {
+            // ================================================================
+            // Mode 1: Fullscreen Stretch
+            // ================================================================
+            // Forces the hardware video plane to stretch edge-to-edge across the viewport
+            if (mode === 'stretch') {
+                this._avplay.setDisplayRect(
+                    Math.round(cLeft),
+                    Math.round(cTop),
+                    Math.round(cw),
+                    Math.round(ch)
+                );
+                this._avplay.setDisplayMethod('PLAYER_DISPLAY_MODE_FULL_SCREEN');
+                log.info('Applied display geometry (stretch):', { x: cLeft, y: cTop, width: cw, height: ch });
+                return;
+            }
+
+            // ================================================================
+            // Mode 2: Math-Calculated Zoom (Cover / Crop)
+            // ================================================================
+            // Scales the video plane by the maximum factor to fill the viewport and symmetrically crop bars
+            if (mode === 'zoom') {
+                const { width: vw, height: vh } = this._getVideoDimensions();
+
+                if (vw > 0 && vh > 0) {
+                    // Calculate uniform scale required to cover both width and height
+                    const scale = Math.max(cw / vw, ch / vh);
+                    const w = Math.round(vw * scale);
+                    const h = Math.round(vh * scale);
+
+                    // Symmetrically center the cropped area with negative coordinate offsets
+                    const left = Math.round(cLeft + (cw - w) / 2);
+                    const top = Math.round(cTop + (ch - h) / 2);
+
+                    // Push oversized coordinates to hardware video plane to clip outer overflow.
+                    // We use PLAYER_DISPLAY_MODE_LETTER_BOX so the underlying hardware rasterizer
+                    // preserves the native DAR / PAR without stretching the video picture.
+                    this._avplay.setDisplayRect(left, top, w, h);
+                    this._avplay.setDisplayMethod('PLAYER_DISPLAY_MODE_LETTER_BOX');
+                    log.info('Applied display geometry (zoom):', { left, top, width: w, height: h, vw, vh, scale });
+                    return;
+                }
+
+                // If stream metadata is still pending, temporarily default to full screen letterbox
+                this._avplay.setDisplayRect(
+                    Math.round(cLeft),
+                    Math.round(cTop),
+                    Math.round(cw),
+                    Math.round(ch)
+                );
+                this._avplay.setDisplayMethod('PLAYER_DISPLAY_MODE_LETTER_BOX');
+                return;
+            }
+
+            // ================================================================
+            // Mode 3: Hardware Video Aspect Ratio (Container Metadata DAR/PAR)
+            // ================================================================
+            if (mode === 'video_aspect_ratio' || mode === 'video' || mode === 'auto_aspect_ratio') {
+                this._avplay.setDisplayRect(
+                    Math.round(cLeft),
+                    Math.round(cTop),
+                    Math.round(cw),
+                    Math.round(ch)
+                );
+                this._avplay.setDisplayMethod('PLAYER_DISPLAY_MODE_AUTO_ASPECT_RATIO');
+                log.info('Applied display geometry (video_aspect_ratio):', { x: cLeft, y: cTop, width: cw, height: ch });
+                return;
+            }
+
+            // ================================================================
+            // Mode 4: Auto (Letterbox / Contain)
+            // ================================================================
+            // Default letterbox display mode preserving intrinsic DAR with standard black bars
+            this._avplay.setDisplayRect(
+                Math.round(cLeft),
+                Math.round(cTop),
+                Math.round(cw),
+                Math.round(ch)
+            );
+            this._avplay.setDisplayMethod('PLAYER_DISPLAY_MODE_LETTER_BOX');
+            log.info('Applied display geometry (auto letterbox):', { x: cLeft, y: cTop, width: cw, height: ch });
+        } catch (e) {
+            log.error('Failed to apply display geometry:', e);
+        }
+    }
+
+    /**
      * Create video display area and commit initial raster layout.
      * Preserves the active aspect ratio mode across player initialization.
      * @private
      */
     _createDisplay() {
-        if (!this._avplay) return;
-
-        // Container element dimensions in current DOM coordinate space
-        const rect = this.container.getBoundingClientRect();
-        log.debug('_createDisplay rect:', rect);
-
-        try {
-            // Commit container rectangle boundaries to hardware video plane
-            this._avplay.setDisplayRect(
-                Math.round(rect.left),
-                Math.round(rect.top),
-                Math.round(rect.width),
-                Math.round(rect.height)
-            );
-
-            // Re-apply active aspect ratio mode (defaults to LETTER_BOX)
-            this.setAspectRatio(this._aspectRatio || 'auto');
-
-            // NOTE: Do NOT call tizen.tvwindow.show() here. That API is for TV tuner/HDMI input,
-            // not for AVPlay. Calling it can cause the video plane to render above HTML elements.
-        } catch (e) {
-            log.error('Failed to set display:', e);
-        }
+        this._applyDisplayGeometry();
     }
 
     /**
      * Set aspect ratio mode on Samsung Tizen AVPlay.
-     * Maps user-selected mode to hardware-supported display method constants.
+     * Applies geometric layout coordinates or hardware display methods.
      *
-     * In addition to letterbox ('auto') and fullscreen stretch ('stretch'), AVPlay natively
-     * supports automatic aspect ratio adjustments based on stream container DAR/PAR metadata
-     * via 'PLAYER_DISPLAY_MODE_AUTO_ASPECT_RATIO'.
-     *
-     * @param {string} mode - 'auto' | 'stretch' | 'video_aspect_ratio'
+     * @param {string} mode - 'auto' | 'zoom' | 'stretch' | 'video_aspect_ratio'
      */
     setAspectRatio(mode) {
-        // Track the current aspect ratio mode locally for OSD sync
-        this._aspectRatio = mode || 'auto';
-        if (!this._avplay) return;
+        const targetMode = mode || 'auto';
 
-        try {
-            // Default to letterbox display mode
-            let displayMethod = 'PLAYER_DISPLAY_MODE_LETTER_BOX';
-
-            switch (mode) {
-                case 'stretch':
-                    // Force video raster to fill the entire hardware rectangle ignoring ratio
-                    displayMethod = 'PLAYER_DISPLAY_MODE_FULL_SCREEN';
-                    break;
-
-                case 'video_aspect_ratio':
-                case 'video':
-                case 'auto_aspect_ratio':
-                    // AVPlay hardware display mode reading DAR / PAR metadata directly from container
-                    displayMethod = 'PLAYER_DISPLAY_MODE_AUTO_ASPECT_RATIO';
-                    break;
-
-                case 'zoom':
-                case 'auto':
-                default:
-                    // Maintain native DAR/PAR with standard letterbox/pillarbox bars
-                    displayMethod = 'PLAYER_DISPLAY_MODE_LETTER_BOX';
-                    break;
-            }
-
-            // Apply display method directly on AVPlay media pipeline
-            log.info('Setting aspect ratio:', mode, '->', displayMethod);
-            this._avplay.setDisplayMethod(displayMethod);
-        } catch (e) {
-            // Log hardware exceptions if AVPlay is in an invalid state
-            log.error('Failed to set aspect ratio:', e);
+        // --------------------------------------------------------------------
+        // Reset Aspect Ratio Before Applying Zoom
+        // --------------------------------------------------------------------
+        // If previous aspect ratio was 'stretch' (or any non-default mode),
+        // AVPlay's hardware scaler retains the FULL_SCREEN stretch transform.
+        // We reset the display method and rect to 'auto' (LETTER_BOX) first,
+        // ensuring the hardware pipeline clears the stretch deformation
+        // before our calculated zoom boundaries are applied.
+        if (targetMode === 'zoom') {
+            log.info('TizenAVPlayer: Resetting aspect ratio to auto prior to applying zoom');
+            this._aspectRatio = 'auto';
+            this._applyDisplayGeometry();
         }
+
+        // Track and commit the target aspect ratio mode
+        this._aspectRatio = targetMode;
+        this._applyDisplayGeometry();
     }
 
     /**
      * Get current aspect ratio mode
-     * @returns {string} 'auto' | 'stretch' | 'video_aspect_ratio'
+     * @returns {string} 'auto' | 'zoom' | 'stretch' | 'video_aspect_ratio'
      */
     getAspectRatio() {
         return this._aspectRatio || 'auto';
@@ -937,6 +1081,15 @@ export class TizenAVPlayer {
                                 });
                             }
                         });
+                    }
+
+                    // ----------------------------------------------------------------
+                    // Zoom Geometry Refresh On First Rendered Frame
+                    // ----------------------------------------------------------------
+                    // If zoom mode is active, refresh display geometry now that the hardware
+                    // video plane is actively decoding and stream dimensions are definitively known.
+                    if (this._aspectRatio === 'zoom') {
+                        this._applyDisplayGeometry();
                     }
                 }
 

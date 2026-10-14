@@ -1,5 +1,6 @@
 package org.litefin.app
 
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -58,12 +59,26 @@ class MainActivity : TauriActivity() {
   // Reference to the shared FrameLayout root container hosting TextureView and WebView
   private var rootContainer: FrameLayout? = null
 
-  // Reference to the active WebView instance
-  private var activeWebView: WebView? = null
+  // Reference to the active WebView instance (internal so AndroidLauncherHelper can evaluate JavaScript)
+  internal var activeWebView: WebView? = null
+
+  // Reference to the native launcher helper managing Android TV channels and shortcuts
+  private val launcherHelper by lazy { AndroidLauncherHelper(this) }
+
+  // Tracks cold-launch deep link payload until claimed by web application
+  private var initialDeepLink: String? = null
 
   override fun onCreate(savedInstanceState: Bundle?) {
     instance = this
     enableEdgeToEdge()
+
+    // -------------------------------------------------------------------------
+    // Capture Cold-Boot Deep Link Intent
+    // -------------------------------------------------------------------------
+    // If Litefin was cold-started from an Android TV Play Next card, preview channel,
+    // or mobile dynamic launcher shortcut, extract the target item payload.
+    // -------------------------------------------------------------------------
+    initialDeepLink = launcherHelper.extractDeepLinkPayload(intent)
 
     // -------------------------------------------------------------------------
     // Set Pitch Black Window Background on Launch
@@ -96,6 +111,21 @@ class MainActivity : TauriActivity() {
 
     super.onCreate(savedInstanceState)
     setFullscreen(true)
+  }
+
+  /**
+   * ===========================================================================
+   * Intercept Warm-Start Deep Link Intents
+   * ===========================================================================
+   * Triggered when a user taps an Android TV home screen tile or dynamic shortcut
+   * while Litefin is already running in the background (singleTask launchMode).
+   * ===========================================================================
+   */
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    // Dispatch new deep-link target directly to running web application
+    launcherHelper.handleIncomingIntent(intent)
   }
 
   override fun onDestroy() {
@@ -664,5 +694,37 @@ class MainActivity : TauriActivity() {
         }
       }
     }
+
+    /**
+     * =========================================================================
+     * Android TV Home Screen & Mobile Shortcuts Integration
+     * =========================================================================
+     * Syncs Continue Watching and Next Up rows to Android TV Watch Next (Play Next),
+     * Preview Channels, and dynamic mobile shortcuts.
+     * =========================================================================
+     */
+    @JavascriptInterface
+    fun updateLauncherPrograms(programsJson: String) {
+      launcherHelper.updatePrograms(programsJson)
+    }
+
+    /**
+     * Clears all published launcher programs on logout.
+     */
+    @JavascriptInterface
+    fun clearLauncherPrograms() {
+      launcherHelper.clearPrograms()
+    }
+
+    /**
+     * Retrieves any cold-boot deep-link target waiting from activity launch.
+     */
+    @JavascriptInterface
+    fun getInitialDeepLink(): String? {
+      val payload = initialDeepLink
+      initialDeepLink = null
+      return payload
+    }
   }
 }
+

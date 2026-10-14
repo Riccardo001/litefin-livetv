@@ -60,6 +60,7 @@ import { cssVarsPolyfill } from '../utils/CssVarsPolyfill.js';
 import { versionChecker } from '../utils/VersionChecker.js';
 import { globalClock } from '../ui/GlobalClock.js';
 import { smartHubManager } from '../tizen/SmartHubManager.js';
+import { androidLauncherManager } from '../android/AndroidLauncherManager.js';
 import { remoteButtonManager } from './RemoteButtonManager.js';
 import { screensaverManager } from './ScreensaverManager.js';
 
@@ -185,11 +186,14 @@ class App {
             });
         }
 
-        // 4.5. Initialize Smart Hub Preview (Tizen 4+ only — gracefully no-ops on older
-        //      hardware or other platforms. Must run after auth.init() so the manager can
-        //      read the restored auth state and start the refresh cycle immediately.)
+        // 4.5. Initialize Smart Hub Preview (Tizen 4+ only) and Android Launcher Integration
+        //      (Android TV Play Next / Channels & Mobile Launcher Shortcuts).
+        //      Must run after auth.init() so the managers can read the restored auth
+        //      state and start their refresh cycles immediately.
         if (platformInfo.isTizen) {
             smartHubManager.init();
+        } else if (platformInfo.isAndroid) {
+            androidLauncherManager.init();
         }
 
         // ====================================================================

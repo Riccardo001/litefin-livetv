@@ -14,10 +14,8 @@ export default class AspectRatioMenu extends BaseMenu {
         // ====================================================================
         // Menu Option Definitions
         // ====================================================================
-        // On Samsung Tizen TVs, AVPlay's hardware video plane does not support
-        // a native crop/zoom mode. We dynamically omit 'zoom' on AVPlay and offer
-        // 'Video Aspect Ratio' (PLAYER_DISPLAY_MODE_AUTO_ASPECT_RATIO) alongside
-        // standard Auto and Stretch modes so users can utilize native stream DAR/PAR metadata.
+        // We define supported aspect ratios dynamically per platform backend.
+        // Tizen AVPlay supports calculated Zoom, Auto, Stretch, and native Video Aspect Ratio.
         this.options = this._getSupportedOptions();
     }
 
@@ -25,11 +23,11 @@ export default class AspectRatioMenu extends BaseMenu {
      * Determine supported aspect ratio options based on active device platform and player backend.
      *
      * AVPlay Hardware Consideration:
-     * - AVPlay's hardware video plane does not support a native crop/zoom mode, so Zoom is excluded.
-     * - In addition to Letterbox ('auto') and Stretch ('stretch'), AVPlay supports native automatic
-     *   aspect ratio handling via 'PLAYER_DISPLAY_MODE_AUTO_ASPECT_RATIO' ('video_aspect_ratio'),
-     *   which automatically adjusts the display based on embedded stream DAR/PAR metadata.
-     * - Non-AVPlay platforms (HTML5, ExoPlayer, WebOS) retain standard Auto, Zoom, and Stretch modes.
+     * - Tizen AVPlay calculates zoom geometry via setDisplayRect (similar to WebOSPlayer)
+     *   to seamlessly crop letterbox/pillarbox margins without distorting the picture.
+     * - In addition to Auto, Zoom, and Stretch, AVPlay supports native automatic
+     *   aspect ratio handling via 'PLAYER_DISPLAY_MODE_AUTO_ASPECT_RATIO' ('video_aspect_ratio').
+     * - Non-AVPlay platforms (HTML5, ExoPlayer, WebOS) provide standard Auto, Zoom, and Stretch modes.
      *
      * @private
      * @returns {Array<{id: string, label: string, key: string}>}
@@ -40,11 +38,13 @@ export default class AspectRatioMenu extends BaseMenu {
             platformInfo.isTizen ||
             (typeof window !== 'undefined' && Boolean(window.webapis?.avplay || window.tizen));
 
-        // When using Samsung AVPlay backend, provide Auto, Video Aspect Ratio, and Stretch
+        // When using Samsung AVPlay backend, provide Auto, Zoom, Video Aspect Ratio, and Stretch
         if (isAvPlay) {
             return [
                 // Standard letterbox mode preserving geometry with borders
                 { id: 'auto', label: i18n.t('Auto'), key: 'Auto' },
+                // Math-calculated geometric crop zoom filling the screen
+                { id: 'zoom', label: i18n.t('Zoom'), key: 'Zoom' },
                 // AVPlay hardware display mode honoring stream DAR / PAR tags
                 { id: 'video_aspect_ratio', label: i18n.t('VideoAspectRatio') || 'Video Aspect Ratio', key: 'VideoAspectRatio' },
                 // Fullscreen stretch mode filling the physical display panel

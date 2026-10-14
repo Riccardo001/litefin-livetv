@@ -16,9 +16,9 @@ Fixes # (issue)
 
 Please describe the tests that you ran to verify your changes. Provide instructions so we can reproduce. Please also list any relevant details for your test configuration.
 
-- **Platform**: [e.g. Tizen, webOS, Web]
-- **Device Model**: [e.g. UN65KU6300, OLED55C1PUB]
-- **Build Variant Tested**: [e.g. Normal, Legacy, Ultra Legacy, Modern]
+- **Platform**: [e.g. Android TV, Android Mobile, Tizen, webOS, Windows, Linux, macOS, Web Plugin]
+- **Device Model / Environment**: [e.g. CCwGTV 4K, Samsung QN90A, LG C2, Windows 11 PC, MacBook M2, Browser]
+- **Build Variant Tested**: [e.g. Modern, Normal, Legacy, Ultra Legacy, Desktop/Native, Web Plugin]
 
 ## Checklist
 

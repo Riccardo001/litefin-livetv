@@ -403,12 +403,10 @@
     overflow: hidden;
     touch-action: pan-y;
     /*
-     * CRITICAL: contain:layout + paint prevents the carousel's own
-     * repaints from cascading into the sidebar or row sections.
-     * This is what makes opening the sidebar feel instant even while
-     * the Ken Burns or cross-fade animation is running.
+     * Isolates layout and style so internal changes within the carousel
+     * do not cascade layout invalidations outward to neighboring sections.
      */
-    contain: layout style paint;
+    contain: layout style;
 }
 
 /*
@@ -862,7 +860,6 @@
     position: relative;
     /* Ensure the row cards float cleanly above the lower backdrop layer for spatial focus */
     z-index: 10;
-    contain: paint layout;
 }
 
 /* Upward Section Overlap for compact mode */
@@ -874,7 +871,6 @@
     margin-top: var(--hero-carousel-overlap-compact, -550px);
     position: relative;
     z-index: 10;
-    contain: paint layout;
 }
 
 /* Elevated Text Content padding to push meta/description above the home-rows overlap */
@@ -1223,11 +1219,9 @@ body:not(.no-sidebar):not(.sidebar-mode-hidden) .hero-carousel-container.semi-im
     }
     html:not([data-display-scale]) #home-hero-placeholder.style-immersive + .home-rows {
         margin-top: -340px;
-        contain: paint layout;
     }
     html:not([data-display-scale]) #home-hero-placeholder.style-immersive.style-compact + .home-rows {
         margin-top: -420px;
-        contain: paint layout;
     }
 
     html:not([data-display-scale]) .hero-carousel-container.immersive .hero-item {
@@ -1266,11 +1260,9 @@ body:not(.no-sidebar):not(.sidebar-mode-hidden) .hero-carousel-container.semi-im
     }
     html:not([data-display-scale]) #home-hero-placeholder.style-immersive + .home-rows {
         margin-top: -240px;
-        contain: paint layout;
     }
     html:not([data-display-scale]) #home-hero-placeholder.style-immersive.style-compact + .home-rows {
         margin-top: -300px;
-        contain: paint layout;
     }
 
     html:not([data-display-scale]) .hero-carousel-container.immersive .hero-item {

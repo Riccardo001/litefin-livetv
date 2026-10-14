@@ -77,6 +77,20 @@
     background: transparent;
 }
 
+/* ==========================================================================
+   WebOS Video Surface Normalization
+   ==========================================================================
+   On webOS, WebOSPlayer dynamically fits the <video> layout box directly
+   to the active media stream aspect ratio (_fitVideoBox) to prevent hardware
+   plane distortion on non-16:9 streams. Because document-level player-active
+   transparency rules make ancestor layers transparent, the container itself
+   must maintain an opaque pitch-black presentation background so letterbox
+   and pillarbox margins do not reveal the host platform's white canvas.
+   ========================================================================== */
+html[data-platform="webos"] .player-container {
+    background: #000000 !important;
+}
+
 .player-container video,
 .player-container movi-player,
 .player-container .movi-player-container,

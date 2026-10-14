@@ -4,9 +4,9 @@ using MediaBrowser.Model.Plugins;
 
 /// <summary>
 /// ============================================================================
-/// Litefin Web - Plugin Configuration Model
+/// Litefin Client - Plugin Configuration Model
 /// ============================================================================
-/// Stores server-wide settings for the Litefin Web client hosting plugin.
+/// Stores server-wide settings for the Litefin Client hosting plugin.
 /// Jellyfin automatically serializes and persists instances of this configuration
 /// to the server's plugins configuration directory.
 /// ============================================================================
@@ -23,8 +23,8 @@ public class PluginConfiguration : BasePluginConfiguration
         // and WebCodecs can use SharedArrayBuffer for high-performance demuxing.
         EnableCrossOriginIsolation = true;
 
-        // Custom branding label shown in the Jellyfin navigation menu
-        PluginMenuTitle = "Litefin Web";
+        // Custom branding label shown in the Jellyfin navigation menu sidebar
+        PluginMenuTitle = Plugin.Instance?.Name ?? "Litefin Client";
     }
 
     /// <summary>

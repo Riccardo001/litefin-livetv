@@ -22,8 +22,17 @@ import SubtitleStyles from '../../utils/SubtitleStyles.js';
 import { platformInfo } from '../../utils/PlatformInfo.js';
 
 const log = logger.create('LibassWasmRenderer');
-
-const getAbsoluteUrl = (relPath) => new URL(relPath, window.location.href).href;
+/**
+ * Resolves relative asset paths to absolute HTTP URLs.
+ * Uses document.baseURI (which honors any active <base href> tag injected by host plugins)
+ * and falls back to window.location.href in headless or non-standard environments.
+ */
+const getAbsoluteUrl = (relPath) => {
+    // Determine effective base URI from document or window location
+    const base = (typeof document !== 'undefined' && document.baseURI) ? document.baseURI : window.location.href;
+    // Construct normalized absolute URL for worker font fetching
+    return new URL(relPath, base).href;
+};
 
 let _availableFonts = null;
 function getAvailableFonts() {

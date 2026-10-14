@@ -1,10 +1,11 @@
 /**
  * ============================================================================
- * Litefin Web Plugin - Automated Packaging Script
+ * Litefin Client Plugin - Automated Packaging Script
  * ============================================================================
- * Automates compiling the web client bundle, publishing the .NET 8 server plugin,
- * bundling assets, creating the release zip, calculating MD5 checksums,
- * and generating/updating the standalone Jellyfin repository manifest.
+ * Automates compiling the web client bundle across supported tiers (Modern,
+ * Normal, Legacy, Ultra-Legacy), publishing the .NET 8 server plugin with
+ * stamped metadata, bundling client assets, creating the release zip archive,
+ * calculating MD5 checksums, and generating/updating the repository manifest.
  * ============================================================================
  */
 
@@ -20,7 +21,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 // ============================================================================
-// 1. Version and Argument Parsing
+// 1. Version, Tier, and Argument Parsing
 // ============================================================================
 // Read single-source-of-truth version directly from package.json
 const packageJsonPath = path.join(rootDir, 'package.json');
@@ -31,6 +32,56 @@ const version = packageJson.version || '1.0.0';
 const args = process.argv.slice(2);
 const changelogArg = args.find((a) => a.startsWith('--changelog='));
 let changelog = changelogArg ? changelogArg.replace('--changelog=', '').trim() : '';
+
+// Supported build tiers and tier-specific configuration matrix
+const TIER_CONFIGS = {
+    modern: {
+        name: 'Litefin Client',
+        zipSuffix: '',
+        webpackConfig: 'web',
+        distDir: path.join(rootDir, 'dist', 'web'),
+        guid: 'b4a2c918-7e3f-4d92-a1b8-6e54f0a9d123',
+        description: 'Embedded modern Litefin client with Movi WebAssembly video player.',
+        overview: 'Access Litefin directly in your browser at /litefin.'
+    },
+    normal: {
+        name: 'Litefin Client (Normal)',
+        zipSuffix: '-Normal',
+        webpackConfig: 'normal',
+        distDir: path.join(rootDir, 'dist', 'normal'),
+        guid: 'b4a2c918-7e3f-4d92-a1b8-6e54f0a9d124',
+        description: 'Embedded Litefin client (Normal tier for Chromium 63+ / Tizen 5.0+).',
+        overview: 'Access Litefin directly in your browser at /litefin (Chromium 63+ compatible).'
+    },
+    legacy: {
+        name: 'Litefin Client (Legacy)',
+        zipSuffix: '-Legacy',
+        webpackConfig: 'legacy',
+        distDir: path.join(rootDir, 'dist', 'legacy'),
+        guid: 'b4a2c918-7e3f-4d92-a1b8-6e54f0a9d125',
+        description: 'Embedded Litefin client (Legacy tier for Chromium 38+ / Tizen 3.0+ / webOS 4.0+).',
+        overview: 'Access Litefin directly in your browser at /litefin (Chromium 38+ / ES5 compatible).'
+    },
+    'ultra-legacy': {
+        name: 'Litefin Client (Ultra-Legacy)',
+        zipSuffix: '-Ultra-Legacy',
+        webpackConfig: 'ultra-legacy',
+        distDir: path.join(rootDir, 'dist', 'ultra-legacy'),
+        guid: 'b4a2c918-7e3f-4d92-a1b8-6e54f0a9d126',
+        description: 'Embedded Litefin client (Ultra-Legacy tier for Chromium 26+ / Tizen 2.3+ / webOS 1.0+).',
+        overview: 'Access Litefin directly in your browser at /litefin (Chromium 26+ / heavy polyfills).'
+    }
+};
+
+// Parse target tier from CLI flag (--tier=...) or positional arguments
+const tierArg = args.find((a) => a.startsWith('--tier='));
+let tier = tierArg ? tierArg.replace('--tier=', '').trim().toLowerCase() : '';
+if (!tier) {
+    const validTiers = Object.keys(TIER_CONFIGS);
+    tier = args.find((a) => validTiers.includes(a.toLowerCase())) || 'modern';
+}
+
+const currentConfig = TIER_CONFIGS[tier] || TIER_CONFIGS.modern;
 
 // Check environment variable fallback for CI/CD runners
 if (!changelog && process.env.CHANGELOG) {
@@ -57,35 +108,41 @@ if (!changelog) {
 }
 
 console.log(`\n======================================================`);
-console.log(` Packaging Litefin Web Server Plugin v${version}`);
+console.log(` Packaging ${currentConfig.name} Plugin v${version}`);
+console.log(` Tier: ${tier} (Webpack Target: ${currentConfig.webpackConfig})`);
+console.log(` GUID: ${currentConfig.guid}`);
 console.log(`======================================================\n`);
 
 // ============================================================================
-// 2. Build the Web Client (Modern Webpack Target)
+// 2. Build the Web Client (Tier-Specific Webpack Target)
 // ============================================================================
-// Compiles client code with MoviVideoPlayer and movi.wasm WebAssembly binary
-console.log('>>> [1/5] Compiling Litefin web client bundle...');
+// Compiles client code for the selected browser runtime tier
+console.log(`>>> [1/5] Compiling Litefin web client bundle [${currentConfig.name}]...`);
 try {
-    execSync('npx webpack --config webpack.config.cjs --config-name web', {
+    execSync(`npx webpack --config webpack.config.cjs --config-name ${currentConfig.webpackConfig}`, {
         cwd: rootDir,
-        stdio: 'inherit'
+        stdio: 'inherit',
+        env: {
+            ...process.env,
+            NODE_OPTIONS: process.env.NODE_OPTIONS || '--max-old-space-size=4096'
+        }
     });
 } catch (err) {
-    console.error('Failed to compile web bundle:', err);
+    console.error(`Failed to compile ${tier} bundle:`, err);
     process.exit(1);
 }
 
-const distWebDir = path.join(rootDir, 'dist', 'web');
-if (!fs.existsSync(distWebDir) || !fs.existsSync(path.join(distWebDir, 'index.html'))) {
-    console.error('Build output dist/web/index.html was not found!');
+const distClientDir = currentConfig.distDir;
+if (!fs.existsSync(distClientDir) || !fs.existsSync(path.join(distClientDir, 'index.html'))) {
+    console.error(`Build output ${distClientDir}/index.html was not found!`);
     process.exit(1);
 }
 
 // ============================================================================
 // 3. Compile and Publish .NET Server Plugin
 // ============================================================================
-// Publishes Litefin.Web.dll targeting net8.0
-console.log('\n>>> [2/5] Publishing .NET server plugin...');
+// Publishes Litefin.Web.dll targeting net8.0 with stamped tier metadata
+console.log('\n>>> [2/5] Publishing .NET server plugin assembly...');
 const csprojPath = path.join(rootDir, 'server-plugin', 'Litefin.Web.csproj');
 const publishDir = path.join(rootDir, 'server-plugin', 'bin', 'Release', 'net8.0', 'publish');
 
@@ -95,7 +152,7 @@ if (fs.existsSync(publishDir)) {
 
 try {
     execSync(
-        `dotnet publish "${csprojPath}" -c Release -o "${publishDir}" -p:Version=${version} -p:AssemblyVersion=${version}.0 -p:FileVersion=${version}.0`,
+        `dotnet publish "${csprojPath}" -c Release -o "${publishDir}" -p:Version=${version} -p:AssemblyVersion=${version}.0 -p:FileVersion=${version}.0 -p:PluginGuid=${currentConfig.guid} -p:PluginName="${currentConfig.name}" -p:PluginDescription="${currentConfig.description}"`,
         {
             cwd: rootDir,
             stdio: 'inherit'
@@ -109,13 +166,13 @@ try {
 // ============================================================================
 // 4. Bundle Web Assets and Meta Information
 // ============================================================================
-// Copy dist/web into the publish folder under web/
+// Copy compiled tier distribution folder into the publish folder under web/
 console.log('\n>>> [3/5] Bundling web client assets into plugin directory...');
 const targetWebDir = path.join(publishDir, 'web');
 if (fs.existsSync(targetWebDir)) {
     fs.rmSync(targetWebDir, { recursive: true, force: true });
 }
-fs.cpSync(distWebDir, targetWebDir, { recursive: true });
+fs.cpSync(distClientDir, targetWebDir, { recursive: true });
 
 // Copy icon_oblong.png into plugin package root
 const iconOblongSrc = path.join(rootDir, 'assets', 'icon_oblong.png');
@@ -124,16 +181,16 @@ if (fs.existsSync(iconOblongSrc)) {
 }
 
 // Write meta.json for Jellyfin plugin discovery and catalog metadata
-const pluginGuid = 'b4a2c918-7e3f-4d92-a1b8-6e54f0a9d123';
+const pluginGuid = currentConfig.guid;
 const timestamp = new Date().toISOString();
 
 const meta = {
     category: 'General',
     changelog: changelog,
-    description: 'Embedded modern Litefin client with Movi WebAssembly video player.',
+    description: currentConfig.description,
     guid: pluginGuid,
-    name: 'Litefin Web',
-    overview: 'Access Litefin directly in your browser at /litefin.',
+    name: currentConfig.name,
+    overview: currentConfig.overview,
     owner: 'MoazSalem',
     imageUrl: 'https://raw.githubusercontent.com/MoazSalem/litefin/development/assets/icon_oblong.png',
     targetAbi: '10.10.0.0',
@@ -150,7 +207,7 @@ fs.writeFileSync(path.join(publishDir, 'meta.json'), JSON.stringify(meta, null, 
 // 5. Create Plugin Release ZIP Archive
 // ============================================================================
 console.log('\n>>> [4/5] Compressing plugin release archive...');
-const zipName = `Litefin.Web.Plugin_${version}.zip`;
+const zipName = `Litefin.Client.Plugin${currentConfig.zipSuffix}_${version}.zip`;
 const zipPath = path.join(rootDir, zipName);
 
 if (fs.existsSync(zipPath)) {
@@ -192,46 +249,53 @@ if (fs.existsSync(manifestPath)) {
     }
 }
 
-// Find existing plugin entry or create a fresh entry
+// Find existing plugin entry for this tier or create a fresh entry
 let pluginEntry = manifest.find((item) => item.guid === pluginGuid);
 if (!pluginEntry) {
     pluginEntry = {
         guid: pluginGuid,
-        name: 'Litefin Web',
-        description: 'Embedded modern Litefin client with Movi WebAssembly video player.',
-        overview: 'Access Litefin directly in your browser at /litefin.',
+        name: currentConfig.name,
+        description: currentConfig.description,
+        overview: currentConfig.overview,
         owner: 'MoazSalem',
         category: 'General',
         imageUrl: 'https://raw.githubusercontent.com/MoazSalem/litefin/development/assets/icon_oblong.png',
         versions: []
     };
-    manifest.unshift(pluginEntry);
+    manifest.push(pluginEntry);
 } else {
-    // Ensure the preview image points to icon_oblong.png
+    // Keep metadata properties up to date
+    pluginEntry.name = currentConfig.name;
+    pluginEntry.description = currentConfig.description;
+    pluginEntry.overview = currentConfig.overview;
     pluginEntry.imageUrl = 'https://raw.githubusercontent.com/MoazSalem/litefin/development/assets/icon_oblong.png';
 }
 
-// Remove any existing entry for this exact version to allow idempotence
+// Remove any existing version entry for this exact version to ensure idempotence
 pluginEntry.versions = (pluginEntry.versions || []).filter((v) => v.version !== version);
+
+// Resolve release tag name for download URL (uses CI tag if present, else fallback)
+const releaseTag = process.env.TAG_NAME || process.env.GITHUB_REF_NAME || `v${version}`;
+const tagForUrl = releaseTag.startsWith('v') ? releaseTag : `v${releaseTag}`;
 
 // Prepend the new version to the versions list
 const versionEntry = {
     version: version,
     changelog: changelog,
     targetAbi: '10.10.0.0',
-    sourceUrl: `https://github.com/MoazSalem/litefin/releases/download/v${version}/${zipName}`,
+    sourceUrl: `https://github.com/MoazSalem/litefin/releases/download/${tagForUrl}/${zipName}`,
     checksum: md5Hash,
     timestamp: timestamp
 };
 
 pluginEntry.versions.unshift(versionEntry);
 
-// Format and save updated manifest
+// Format and save updated repository manifest
 fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
 console.log(`Manifest updated at: ${manifestPath}`);
 
 console.log('\n======================================================');
-console.log(' Build and packaging completed successfully!');
+console.log(` Build and packaging completed for ${currentConfig.name}!`);
 console.log(` Plugin Archive: ${zipName}`);
 console.log(` Manifest: litefin-plugin-manifest.json`);
 console.log('======================================================\n');

@@ -40,7 +40,8 @@ html[data-display-scale] .page {
 
 html[data-display-scale] .page-loading,
 html[data-display-scale] .splash-content,
-html[data-display-scale] .details-backdrop {
+html[data-display-scale] .details-backdrop,
+html[data-display-scale] .trailer-player-overlay {
     width: 100% !important;
     height: 100% !important;
 }

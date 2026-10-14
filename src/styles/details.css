@@ -33,6 +33,7 @@
 }
 
 .details-backdrop {
+    /* Fixed viewport background layer */
     position: fixed;
     top: 0;
     left: 0;
@@ -42,47 +43,64 @@
     background-position: center center;
     opacity: 0;
     transition: opacity 1s ease-in-out;
-    /* Soften the bottom edge to blend with page background */
-    -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
-    mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+    pointer-events: none;
 
-    /* PERFORMANCE: Promote backdrop to its own layer */
-    transform: translateZ(0);
-    will-change: opacity;
+    /*
+     * Hardware Layer Optimization (Android / Smart TV WebViews):
+     * Avoid CSS mask-image on fixed full-viewport elements. In Chromium engines
+     * on low-end ARM GPUs, mask-image forces an offscreen FBO surface allocation
+     * and a Skia CPU/GPU alpha blend pass on every compositor frame.
+     * The child .backdrop-gradient already handles the visual gradient fade
+     * directly in the fragment shader without FBO or CPU overhead.
+     */
 }
 
 .backdrop-gradient {
+    /* Full-bleed overlay positioning */
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
+    /* Clean gradient blend transitioning seamlessly into the page background */
     background: linear-gradient(to bottom,
             rgba(16, 16, 16, 0.45) 0%,
-            var(--jf-background) 125%);
-    /* PERFORMANCE: Isolate gradient from main layout */
-    transform: translateZ(0);
+            rgba(16, 16, 16, 0.75) 60%,
+            var(--jf-background) 100%);
+    pointer-events: none;
 }
 
 /* Details Content Scroller */
 .details-content,
 .details-page .page-content,
 .person-page .page-content {
-    /* CRITICAL: Position Relative required for offsetParent calculations in FocusManager */
+    /* Position Relative required for offsetParent calculations in FocusManager */
     position: relative;
     padding: 0;
     flex: 1;
     overflow-y: auto;
-    /* THIS IS THE SCROLLER */
+    /* Primary scroll container */
 
     outline: none;
-    /* remove focus outline if focused programmatically */
+    /* Remove focus outline if focused programmatically */
 
-    /* PERFORMANCE: GPU acceleration and layout isolation */
+    /*
+     * GPU Compositor & Scrolling Optimization (Android ARM / Smart TVs):
+     * Overrides the global .page-content transform: translateZ(0) and
+     * will-change: transform. On weak ARM processors and Android WebViews,
+     * declaring will-change: transform on an overflow-y scroll container tells
+     * the compositor to allocate a transform-ready layer. As programmatic
+     * scrollTop values update during smooth scrolling, the compositor invalidates
+     * the entire layer's raster cache every frame, causing severe frame drops.
+     * Reverting to native scrolling (transform: none, will-change: auto) and
+     * removing paint containment allows Blink/Chromium to scroll smoothly
+     * using pre-rasterized tiles without continuous CPU/GPU raster stalls.
+     */
     -webkit-overflow-scrolling: touch;
-    transform: translateZ(0);
-    will-change: transform;
-    contain: layout paint style;
+    transform: none;
+    -webkit-transform: none;
+    will-change: auto;
+    contain: layout style;
 }
 
 /* Main Split Layout */
@@ -177,8 +195,9 @@
 }
 
 .details-page.layout-backdrop-minimal .details-backdrop {
-    -webkit-mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
-    mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+    /* Mask removed to prevent offscreen compositor allocations during vertical scroll */
+    -webkit-mask-image: none;
+    mask-image: none;
 }
 
 /* Cinematic Backdrop Left Aligned Layout Mode */
@@ -244,8 +263,9 @@
 }
 
 .details-page.layout-backdrop-left .details-backdrop {
-    -webkit-mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
-    mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+    /* Mask removed to prevent offscreen compositor allocations during vertical scroll */
+    -webkit-mask-image: none;
+    mask-image: none;
 }
 
 .hero-poster {
@@ -1179,17 +1199,19 @@ html[data-layout-tier="ultra-legacy"] .details-actions .btn-icon svg {
     border: 2px solid transparent;
     border-radius: var(--jf-border-radius);
     -webkit-border-radius: var(--jf-border-radius);
-    overflow: hidden;
-    background-clip: padding-box;
+    /* Allow visible overflow to avoid expensive rounded-rect clipping masks in Skia */
+    overflow: visible;
     background-color: transparent;
-    transition: background-color 0.5s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    /* Limit transition to border-color to prevent multi-frame background repaints */
+    transition: border-color 0.12s ease;
+    contain: layout style;
 }
 
 .details-rich-meta:focus,
 .details-rich-meta.active-table,
 .details-rich-meta.focused {
     border-color: var(--jf-btn-primary-bg) !important;
-    /* Focus highlight */
+    /* Focus highlight background tint applied cleanly without continuous transition */
     background-color: rgba(var(--jf-accent-dark-rgb,15,15,20),0.65);
     outline: none;
 }
@@ -1198,9 +1220,9 @@ html[data-layout-tier="ultra-legacy"] .details-actions .btn-icon svg {
     display: flex;
     align-items: baseline;
     padding: 6px 0;
-    /* Touch target spacing */
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     /* Row separators */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    contain: layout style;
 }
 
 .rich-meta-row:last-child {
@@ -1219,9 +1241,7 @@ html[data-layout-tier="ultra-legacy"] .details-actions .btn-icon svg {
     flex: 1;
     display: flex;
     flex-wrap: wrap;
-    /* gap: 8px; REMOVED for perf */
 }
-
 
 .meta-chip {
     margin-right: 4px;
@@ -1232,19 +1252,15 @@ html[data-layout-tier="ultra-legacy"] .details-actions .btn-icon svg {
     -webkit-border-radius: var(--jf-border-radius-lg);
     background: rgba(255, 255, 255, 0.05);
     border: 2px solid rgba(255, 255, 255, 0.1) !important;
-    background-clip: padding-box;
     color: var(--jf-text-primary);
     font-size: 1.1rem;
     font-weight: 500;
     cursor: pointer;
     text-decoration: none;
-    transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
     display: inline-flex;
     align-items: center;
-    /* No permanent will-change — genre/studio/cast chips can be 20+ per page.
-       Only the focused chip gets a compositor layer (via :focus rule below). */
+    /* Idle chips have zero active transition overhead to conserve CPU cycles */
 }
-
 
 /*
  * ── RICH DATA METADATA CHIPS FOCUS/HOVER HIGHLIGHT ───────────────────────────
@@ -1264,6 +1280,8 @@ html[data-layout-tier="ultra-legacy"] .details-actions .btn-icon svg {
     z-index: 5;
     /* Promote only the focused chip to avoid unnecessary composite layers */
     will-change: transform;
+    /* Smooth interactive scaling applied strictly to active chip */
+    transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.18s ease, border-color 0.18s ease;
 }
 
 /* Comma removed for chip-style design */

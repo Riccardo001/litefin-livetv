@@ -763,9 +763,13 @@ const webConfig = {
     output: {
         // Output into dedicated dist/web folder consumed by plugin packaging
         path: path.resolve(__dirname, 'dist/web'),
+        // Output JavaScript bundles into the js/ subfolder
         filename: 'js/[name].js',
-        // Relative publicPath guarantees correct asset resolution under plugin routes
-        publicPath: './',
+        // Omitting an explicit publicPath allows Webpack 5's automatic ('auto') relative public path
+        // mechanism to calculate correct relative traversal paths (e.g. '../assets/fonts/...')
+        // for assets declared in CSS stylesheets extracted to the css/ directory.
+        // Specifying a literal './' here incorrectly forces CSS asset URLs to './assets/fonts/...',
+        // causing browsers loading /litefin/css/main.css to 404 on /litefin/css/assets/fonts/....
         clean: true
     },
 

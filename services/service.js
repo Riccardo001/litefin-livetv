@@ -280,7 +280,24 @@ function writeResponse(res, code, contentType, body) {
 var PLAYER_HTML = `<!doctype html>
 <html>
 <head>
-<style>html,body{margin:0;padding:0;background:#000;width:100%;height:100%;overflow:hidden;}</style>
+<style>
+    /* Complete viewport reset with pointer events disabled to suppress hover overlays */
+    html, body {
+        margin: 0;
+        padding: 0;
+        background: #000;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        pointer-events: none;
+    }
+    /* Lock player container and child iframes from receiving mouse or cursor events */
+    #player, #player iframe {
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+    }
+</style>
 </head>
 <body>
 <div id="player" style="width:100%;height:100%;"></div>
@@ -296,28 +313,113 @@ var PLAYER_HTML = `<!doctype html>
     var player;
     var autoplayAttempted = false;
 
+    /*
+     * Enforce highest available playback quality tier.
+     * Prevents YouTube's adaptive streaming algorithm from defaulting to 144p-360p
+     * on player startup before calculating connection throughput.
+     */
+    function enforceQuality() {
+        if (!player) return;
+        try {
+            if (typeof player.setPlaybackQualityRange === 'function') {
+                player.setPlaybackQualityRange('hd1080');
+            }
+        } catch (e) {}
+        try {
+            if (typeof player.setPlaybackQuality === 'function') {
+                var levels = typeof player.getAvailableQualityLevels === 'function'
+                    ? player.getAvailableQualityLevels()
+                    : null;
+                if (Array.isArray(levels) && levels.length > 0) {
+                    var preferred = ['highres', 'hd2160', 'hd1440', 'hd1080', 'hd720'];
+                    var target = null;
+                    for (var i = 0; i < preferred.length; i++) {
+                        if (levels.indexOf(preferred[i]) !== -1) {
+                            target = preferred[i];
+                            break;
+                        }
+                    }
+                    if (target) player.setPlaybackQuality(target);
+                } else {
+                    player.setPlaybackQuality('hd1080');
+                }
+            }
+        } catch (e) {}
+    }
+
+    /*
+     * Suppress and unload automatic closed captions.
+     * YouTube automatically turns on captions for many trailers by default;
+     * unloading the caption module ensures clean playback without subtitle overlay.
+     */
+    function disableCaptions() {
+        if (!player) return;
+        try {
+            if (typeof player.unloadModule === 'function') {
+                player.unloadModule('captions');
+                player.unloadModule('cc');
+            }
+        } catch (e) {}
+        try {
+            if (typeof player.setOption === 'function') {
+                player.setOption('captions', 'track', {});
+                player.setOption('cc', 'track', {});
+                player.setOption('captions', 'reload', false);
+            }
+        } catch (e) {}
+    }
+
     window.onYouTubeIframeAPIReady = function() {
+        /* Explicit pixel dimensions signal full HD viewport to the adaptive streamer */
+        var targetWidth = window.innerWidth || 1920;
+        var targetHeight = window.innerHeight || 1080;
+
         player = new YT.Player('player', {
-            height: '100%', width: '100%', videoId: VID,
+            height: targetHeight,
+            width: targetWidth,
+            videoId: VID,
             playerVars: {
                 'autoplay': 1,
                 'controls': 0,
                 'enablejsapi': 1,
                 'origin': 'http://localhost:8123',
                 'playsinline': 1,
-                'mute': 0
+                'mute': 0,
+                'rel': 0,
+                'showinfo': 0,
+                'iv_load_policy': 3,
+                'modestbranding': 1,
+                'fs': 0,
+                'cc_load_policy': 0,
+                'cc_lang_pref': 'none',
+                'vq': 'hd1080'
             },
             events: {
                 'onReady': function(ev) {
                     post('ready');
 
+                    // Apply immediate quality upgrade and disable captions
+                    disableCaptions();
+                    enforceQuality();
+
                     if (!autoplayAttempted) {
                         autoplayAttempted = true;
                         setTimeout(function() {
                             if (player && player.playVideo) {
+                                disableCaptions();
+                                enforceQuality();
                                 player.playVideo();
                             }
                         }, 100);
+                    }
+
+                    // Staggered enforcement passes to catch delayed track and manifest load
+                    var delays = [200, 500, 1000, 2000];
+                    for (var dIdx = 0; dIdx < delays.length; dIdx++) {
+                        setTimeout(function() {
+                            disableCaptions();
+                            enforceQuality();
+                        }, delays[dIdx]);
                     }
 
                     setInterval(function(){
@@ -330,7 +432,12 @@ var PLAYER_HTML = `<!doctype html>
                         }
                     }, 500);
                 },
-                'onStateChange': function(ev) { post('state', ev.data); },
+                'onStateChange': function(ev) {
+                    // Re-assert top tier quality and no captions on state change (e.g. playing/buffering)
+                    disableCaptions();
+                    enforceQuality();
+                    post('state', ev.data);
+                },
                 'onError': function(ev) { post('error', ev.data); }
             }
         });

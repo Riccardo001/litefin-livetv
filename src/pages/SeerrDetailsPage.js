@@ -109,7 +109,8 @@ class SeerrDetailsPage extends Page {
                             </div>
                         </div>
                     </div>
-                    <div id="rich-meta-container" class="media-row hidden">
+                    <!-- Note: NOT marked as media-row to prevent aggressive top-snapping on focus -->
+                    <div id="rich-meta-container" class="hidden">
                         <div class="details-rich-meta" id="rich-meta"></div>
                     </div>
 
@@ -346,9 +347,10 @@ class SeerrDetailsPage extends Page {
 
         if (item._backdropUrl) BackdropManager.applyBackdrop(this.$('#backdrop'), item._backdropUrl);
 
+        // Defaults to 'genres-studios-writers' to avoid hundreds of tag chips on low-end TV chips
         const richMetadataStyle =
             storage.getItem('pref:richMetadataStyle') ||
-            (storage.getItem('pref:hideRichMetadata') === 'true' ? 'none' : 'all');
+            (storage.getItem('pref:hideRichMetadata') === 'true' ? 'none' : 'genres-studios-writers');
         const isHidden = richMetadataStyle === 'none';
 
         this._richMetaTable = new RichMetadataTable({
@@ -1043,8 +1045,10 @@ class SeerrDetailsPage extends Page {
         }
 
         if (hasRichMeta) {
+            // Target the table element directly to avoid querying or filtering inactive chips on D-pad moves
             updateSection('details-rich-meta', this.$('#rich-meta-container'), {
                 orientation: 'vertical',
+                selector: '#rich-meta',
                 leaveUp: hasOverviewAction ? 'seerr-details-overview' : (hasAction ? 'seerr-details-actions' : null),
                 leaveDown: getDownFromRichMeta(),
                 leaveLeft: 'sidebar',

@@ -946,7 +946,8 @@ export class ApiClient {
         const defaults = {
             // Default item count per library row configured via user settings
             Limit: defaultLimit,
-            Fields: 'BackdropImageTags,ParentBackdropImageTags,Tags',
+            // Request tags, backdrop, and series metadata needed for home card representation
+            Fields: 'BackdropImageTags,ParentBackdropImageTags,Tags,Status,EndDate,SeriesPrimaryImageTag',
             ImageTypeLimit: 1,
             EnableImageTypes: 'Primary,Backdrop,Thumb',
             ParentId: parentId

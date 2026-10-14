@@ -357,14 +357,14 @@ class ScrollController {
         // ----------------------------------------------------------------
         // Standard row-to-row transitions (~250px) utilize the base 200ms duration.
         // For large vertical transitions (e.g. hero carousel ↔ first content row
-        // at 500-750px), scale duration proportionally (up to 280ms). This
-        // keeps velocity under ~2500px/s, allowing the camera to glide with
-        // organic, spring-like weight without violent frame jumps.
+        // at 450-700px), scale duration gently (up to 260ms max). This keeps motion
+        // brisk and responsive for TV D-pad navigation while giving the compositor
+        // adequate budget to glide with natural weight without dropping frames.
         // ----------------------------------------------------------------
         if (isVertical && durationToUse > 0) {
             const distance = Math.abs(targetScroll - currentScroll);
             if (distance > 400) {
-                durationToUse = Math.min(280, Math.round(durationToUse * (1 + (distance - 400) / 750)));
+                durationToUse = Math.min(260, Math.round(durationToUse * (1 + (distance - 400) / 800)));
             }
         }
 
@@ -491,7 +491,7 @@ class ScrollController {
             startScroll: currentScroll,
             target: targetScroll,
             startTime: null, // Initialized in first RAF frame
-            duration
+            duration: durationToUse
         };
 
         // easeOutQuad: fast start, smooth deceleration (t * (2 - t))
@@ -520,9 +520,9 @@ class ScrollController {
             const elapsed = time - state.startTime;
             const progress = Math.min(elapsed / state.duration, 1);
 
-            // SMOOTH ARRIVAL: Blend easeOutQuad into a rescaled easeOutQuad
-            // for the final portion so velocity reaches 0 at the end instead
-            // of making a sub-pixel jump from the asymmetric deceleration curve.
+            // Unified deceleration curve: initiates instantly on frame 1 for snappy
+            // D-pad tactile response, cruises with continuous momentum, and smoothly
+            // settles to velocity = 0 at the arrival point.
             const eased =
                 progress < EASE_BLEND
                     ? easeOutQuad(progress)
@@ -889,6 +889,52 @@ class ScrollController {
             else if (row.querySelector('.person-grid')) {
                 useRowScroll = false;
             }
+        }
+
+        // ====================================================================
+        // DETAILS PAGE RICH METADATA TABLE SCROLL GROUNDING
+        // ====================================================================
+        // The rich metadata table sits directly beneath the hero split (.details-main-split).
+        // On TV displays, both the hero action buttons and the rich metadata table are
+        // designed to be viewed together in the upper section of the page.
+        //
+        // Previously, generic vertical scrolling treated the metadata table as an
+        // arbitrary tall container and attempted to bottom-align it, triggering a 150-300px
+        // smooth scroll down when entering metadata and a smooth scroll up when returning
+        // to action buttons. On low-end ARM TV hardware, this violent bouncing between
+        // adjacent elements forced heavy GPU raster invalidations on every keypress.
+        //
+        // By aligning the rich metadata table with the hero viewport (targetScroll = 0),
+        // navigation between hero actions and rich metadata remains stationary, fluid,
+        // and 100% instant with zero scroll hitching.
+        // ====================================================================
+        const isRichMeta =
+            element.id === 'rich-meta' ||
+            element.id === 'rich-meta-container' ||
+            element.classList.contains('details-rich-meta') ||
+            Boolean(element.closest('#rich-meta, .details-rich-meta, #rich-meta-container'));
+
+        if (isRichMeta && pageContent && pageContent.querySelector('.details-main-split')) {
+            const currentScroll = this.getVerticalScroll(pageContent);
+            const viewHeight = pageContent.clientHeight;
+            const scrollDelta = Math.abs(currentScroll);
+
+            // If already browsing near the top of the details page, stay grounded at 0
+            if (currentScroll < 350) {
+                if (currentScroll > 0) {
+                    this.smoothScrollTo(pageContent, 0, options.instantScroll ? 0 : SCROLL_DURATION_VERTICAL);
+                }
+            } else {
+                // If entering rich metadata from deep rows below (e.g. episodes or seasons),
+                // smoothly glide back to the top to reveal the hero and metadata table together
+                const snapEnabled = storage.getItem('pref:snapLargeScrolls') === 'true';
+                const forceInstant = snapEnabled && scrollDelta > viewHeight * LARGE_SCROLL_SNAP_FRACTION;
+                this.smoothScrollTo(pageContent, 0, options.instantScroll || forceInstant ? 0 : SCROLL_DURATION_VERTICAL);
+            }
+
+            // Grounding complete — bypass row-based and generic scroll-into-view
+            useRowScroll = false;
+            activePageContent = null;
         }
 
         // ----------------------------------------------------------------

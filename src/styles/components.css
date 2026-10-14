@@ -788,6 +788,15 @@ progress.card-progress::-webkit-progress-value {
     display: inline-block;
 }
 
+/* A focused selected row is filled with the adaptive focus background, so the filled checkmark
+   must follow the same dynamic contrast variable instead of the fixed primary text color, or it
+   disappears against a light focus fill. Hover is excluded here because the global hover rule
+   changes no background, leaving --jf-text-primary legible. */
+.modal-option-btn.selected.focused .check-icon .icon-filled,
+.modal-option-btn.selected:focus .check-icon .icon-filled {
+    color: var(--jf-btn-primary-focus-color) !important;
+}
+
 /* Filter/Sort column layout: flex for modern/legacy, floats for ultra-legacy (Chrome 32) */
 .filter-split-container {
     display: flex;
@@ -1767,25 +1776,46 @@ html[data-litefin-touch] .settings-modal .modal-option-btn {
    Phase 2: Remote Trailer Fullscreen OSD
    ============================================================================ */
 .trailer-player-overlay {
+    /* Fixed viewport overlay stretching edge to edge across all scaling tiers */
     position: fixed;
     top: 0;
     left: 0;
-    width: 100vw;
-    height: 100vh;
+    right: 0;
+    bottom: 0;
+    /* Use 100% instead of 100vw/100vh so that CSS zoom respects layout coordinates */
+    width: 100%;
+    height: 100%;
     background: #000;
     z-index: 99999;
 }
 
+/* Container for the trailer embed providing boundary clipping */
 .trailer-iframe-container {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    z-index: 1; /* Behind OSD */
+    /* Keep embed positioned underneath our custom native player OSD */
+    z-index: 1;
+    /* Hard overflow clipping to trim away overscanned external player title bars */
+    overflow: hidden;
 }
 
-/* Trailer iframe & host container overrides to ensure 100% full-viewport sizing */
+/*
+ * ============================================================================
+ * Remote Trailer Iframe & Host Container Sizing and Isolation
+ * ============================================================================
+ * YouTube's embed player displays a title header bar and watermark links by
+ * default and whenever pointer activity is detected.
+ *
+ * 1. pointer-events: none completely isolates the iframe from mouse and magic
+ *    remote hover, ensuring YouTube never activates its internal hover chrome.
+ * 2. transform: scale(1.15) applies a slight hardware-accelerated overscan
+ *    that pushes YouTube's top title bar and bottom watermark completely outside
+ *    the visible viewport boundary without impacting playback performance.
+ * ============================================================================
+ */
 .trailer-iframe-container #yt-player-host,
 .trailer-iframe-container iframe {
     position: absolute;
@@ -1797,9 +1827,25 @@ html[data-litefin-touch] .settings-modal .modal-option-btn {
     border: none;
     margin: 0;
     padding: 0;
+    /* Disallow direct pointer interaction to prevent YouTube hover UI triggers */
+    pointer-events: none;
+    /* Hardware accelerated GPU scale to crop top title bar and bottom logo */
+    transform: scale(1.15);
+    transform-origin: center center;
 }
 
-/* Make sure the OSD overlays the iframe correctly */
+/*
+ * Fallback mode override:
+ * When the iframe API handshake cannot be established, fallback mode relies
+ * on native controls. Restore default pointer events and 1:1 scaling.
+ */
+.trailer-iframe-container.trailer-fallback-mode #yt-player-host,
+.trailer-iframe-container.trailer-fallback-mode iframe {
+    pointer-events: auto;
+    transform: none;
+}
+
+/* Make sure the custom OSD overlays the iframe correctly */
 .trailer-osd {
     z-index: 10;
 }
@@ -2127,6 +2173,43 @@ html[data-layout-quirks="c26"] .media-fallback {
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.modal-filter-pills.has-slot-subrow {
+    border-bottom: none;
+    padding-bottom: 6px;
+}
+
+/* Audio Language Multi-Slot Sub-Tabs (Preferred, Fallback 1, 2, 3) */
+.modal-slot-pills {
+    display: flex;
+    gap: 8px;
+    padding: 6px 24px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal-slot-pill {
+    padding: 8px 10px;
+    font-size: 0.92rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-width: 0;
+}
+
+.modal-slot-pill .slot-pill-title {
+    font-weight: 700;
+    opacity: 0.9;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.modal-slot-pill .slot-pill-val {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
 /* Individual Filter Pill Button */
 .modal-filter-pill {
     flex: 1;
@@ -2140,6 +2223,9 @@ html[data-layout-quirks="c26"] .media-fallback {
     cursor: pointer;
     text-align: center;
     outline: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
@@ -2155,18 +2241,21 @@ html[data-layout-quirks="c26"] .media-fallback {
     z-index: 3;
 }
 
-/* Active Filter Pill */
+/* Active Filter Pill — the label uses the dynamic on-accent contrast color so a light/white
+   custom accent does not render white-on-white text. */
 .modal-filter-pill.active {
     background: var(--jf-accent, #00a4dc);
-    color: #ffffff;
+    color: var(--jf-accent-content-color, #ffffff);
     border-color: var(--jf-accent, #00a4dc);
 }
 
-/* Focused Active Filter Pill */
+/* Focused Active Filter Pill — the focus background is a hardcoded #ffffff for all pills, so the
+   accent-colored label would vanish against it with light accents; use the same fixed dark text
+   as the non-active pills' inverted focus feedback. */
 .modal-filter-pill.active:focus,
 .modal-filter-pill.active.focused {
     background: #ffffff !important;
-    color: var(--jf-accent, #0077aa) !important;
+    color: #111111 !important;
     border-color: #ffffff !important;
     transform: scale(1.04);
 }
@@ -2209,16 +2298,17 @@ html[data-layout-quirks="c26"] .media-fallback {
     transform: scale(1.15);
 }
 
-/* Star in Focused Row Highlight */
+/* Star in Focused Row Highlight — follows the dynamic focus text color (the exact pairing of
+   --jf-btn-primary-focus-bg) instead of a hardcoded white tone that vanishes on light fills. */
 .modal-option-btn:focus .modal-star-btn.active,
 .modal-option-btn.focused .modal-star-btn.active {
-    color: #ffffff;
+    color: var(--jf-btn-primary-focus-color);
 }
 
 /* Inactive Star in Focused Row */
 .modal-option-btn:focus .modal-star-btn:not(.active),
 .modal-option-btn.focused .modal-star-btn:not(.active) {
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--jf-btn-primary-focus-color);
 }
 
 /* Favorite Languages Management Modal Container */

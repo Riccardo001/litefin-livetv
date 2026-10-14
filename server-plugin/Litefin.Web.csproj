@@ -23,6 +23,22 @@
   </PropertyGroup>
 
   <!-- ==================================================================== -->
+  <!-- Tier-Specific Plugin Identity Metadata                              -->
+  <!-- ==================================================================== -->
+  <!-- Stamped into assembly metadata at build time to configure the tier   -->
+  <!-- (Modern, Normal, Legacy, or Ultra-Legacy) and its registered GUID.   -->
+  <!-- ==================================================================== -->
+  <ItemGroup Condition="'$(PluginGuid)' != ''">
+    <AssemblyMetadata Include="PluginGuid" Value="$(PluginGuid)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(PluginName)' != ''">
+    <AssemblyMetadata Include="PluginName" Value="$(PluginName)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(PluginDescription)' != ''">
+    <AssemblyMetadata Include="PluginDescription" Value="$(PluginDescription)" />
+  </ItemGroup>
+
+  <!-- ==================================================================== -->
   <!-- Jellyfin Core Dependencies                                           -->
   <!-- ==================================================================== -->
   <!-- Host-provided by the Jellyfin server runtime at execution time.      -->

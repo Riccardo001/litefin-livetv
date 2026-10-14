@@ -161,9 +161,9 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       # ------------------------------------------------------------------------
-      # Step 8.1: Build and Package Litefin Web Server Plugin
+      # Step 8.1: Build and Package Litefin Client Plugin (Modern)
       # ------------------------------------------------------------------------
-      - name: Build and Package Litefin Web Server Plugin
+      - name: Build and Package Litefin Client Plugin (Modern)
         id: package_plugin
         run: |
           npm run package:plugin
@@ -186,7 +186,7 @@ jobs:
             *.wgt
             *.ipk
             manifest.json
-            Litefin.Web.Plugin_*.zip
+            Litefin.*.Plugin*.zip
             litefin-plugin-manifest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

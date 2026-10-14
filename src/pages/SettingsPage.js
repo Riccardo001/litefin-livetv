@@ -28,6 +28,7 @@ import { pluginManager } from '../plugins/PluginManager.js';
 import { platformInfo } from '../utils/PlatformInfo.js';
 import { homeLayoutManager } from '../utils/HomeLayoutManager.js';
 import { sidebarLayoutManager } from '../utils/SidebarLayoutManager.js';
+import { AUDIO_FALLBACK_SLOTS, isAudioFallbackSelect } from '../utils/AudioFallbackConfig.js';
 import { eventBus } from '../core/EventBus.js';
 import { versionChecker } from '../utils/VersionChecker.js';
 import { settingsIcons, sidebarIcons, setIconStyle, getSupportedStyles } from '../utils/Icons.js';
@@ -2576,24 +2577,28 @@ class SettingsPage extends Page {
                 'rich-metadata-select',
                 [
                     { value: 'all', label: i18n.t('OptionRichMetadataAll') || 'Show Full Rich Metadata' },
+                    // Option to hide tags and directors while showing genres, studios, and writers
                     {
                         value: 'genres-studios-writers',
                         label:
-                            i18n.t('OptionRichMetadataGenresStudiosWriters') ||
-                            'Show Genres, Studios & Writers'
+                            i18n.t('OptionRichMetadataHideTagsOnly') ||
+                            'Hide Tags Only'
                     },
+                    // Option to hide tags and studios while showing genres and writers
                     {
                         value: 'genres-writers',
-                        label: i18n.t('OptionRichMetadataGenresWriters') || 'Show Genres & Writers'
+                        label: i18n.t('OptionRichMetadataHideTagsAndStudios') || 'Hide Tags and Studios'
                     },
+                    // Option to display genres alone and suppress other metadata sections
                     {
                         value: 'genres-only',
-                        label: i18n.t('OptionRichMetadataGenresOnly') || 'Show Only Genres'
+                        label: i18n.t('OptionRichMetadataShowGenresOnly') || 'Show Genres Only'
                     },
+                    // Option to hide all rich metadata completely
                     { value: 'none', label: i18n.t('OptionRichMetadataNone') || 'Hide All' }
                 ],
                 storage.getItem('pref:richMetadataStyle') ||
-                (storage.getItem('pref:hideRichMetadata') === 'true' ? 'none' : 'all')
+                (storage.getItem('pref:hideRichMetadata') === 'true' ? 'none' : 'genres-studios-writers')
             )}
                     </div>
                 </div>
@@ -3853,14 +3858,12 @@ class SettingsPage extends Page {
                 <div class="setting-item">
                     <div class="setting-label">
                         <span class="setting-name" data-i18n="LabelAudioLanguagePreference">${i18n.t('LabelAudioLanguagePreference')}</span>
-                        <span class="setting-description" data-i18n="PreferredAudioLanguageDescription">${i18n.t('PreferredAudioLanguageDescription')}</span>
+                        <span class="setting-description" data-i18n="AudioLanguageFallbackDescription">${i18n.t('AudioLanguageFallbackDescription')}</span>
                     </div>
                     <div class="setting-control">
-                        ${this._renderDropdown(
-                'audio-lang-select',
-                [{ value: 'Default', label: i18n.t('Default') }, ...this.prefLanguages],
-                storage.getItem('pref:audioLang') || 'Default'
-            )}
+                        <button class="setting-action-btn audio-fallback-select-btn" id="audio-fallback-languages-btn" tabindex="0" data-focusable="true">
+                            <span class="btn-label">${this._getAudioPreferencesSummaryLabel()}</span>
+                        </button>
                     </div>
                 </div>
 
@@ -4613,8 +4616,61 @@ class SettingsPage extends Page {
                     </div>
                 </div>
 
+                <h3 class="setting-section-title" data-i18n="TrailersSettings">${i18n.t('TrailersSettings')}</h3>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span class="setting-name" data-i18n="TrailerPlayback">${i18n.t('TrailerPlayback') || 'Trailer Playback'}</span>
+                        <span class="setting-description" data-i18n="TrailerPlaybackDescription">${i18n.t('TrailerPlaybackDescription') || 'Choose how remote trailers are opened'}</span>
+                    </div>
+                    <div class="setting-control">
+                        ${this._renderDropdown(
+                'trailer-playback-select',
+                [
+                    {
+                        value: 'internal_proxy',
+                        label: i18n.t('InternalPlayerNew') || 'Internal Player (New)'
+                    },
+                    {
+                        value: 'internal_iframe',
+                        label: i18n.t('InternalPlayerLegacy') || 'Internal Player (Legacy Iframe)'
+                    },
+                    { value: 'external', label: i18n.t('ExternalApp') || 'External App' }
+                ],
+                PlayerSettings.get('trailerPlaybackMode')
+            )}
+                    </div>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span class="setting-name" data-i18n="TrailerAutoChain">${i18n.t('TrailerAutoChain') || 'Auto-play local, then online'}</span>
+                        <span class="setting-description" data-i18n="TrailerAutoChainDescription">${i18n.t('TrailerAutoChainDescription') || 'Plays the server-side trailer first, then jumps straight to the online trailer when it ends. No picking required.'}</span>
+                    </div>
+                    <div class="setting-control">
+                        <button class="toggle-switch ${PlayerSettings.get('trailerAutoChain') ? 'active' : ''}"
+                                id="toggle-trailer-auto-chain"
+                                data-setting="trailerAutoChain"
+                                tabindex="0">
+                        </button>
+                    </div>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span class="setting-name" data-i18n="EnableBackgroundService">${i18n.t('EnableBackgroundService') || 'Enable Background Service'}</span>
+                        <span class="setting-description" data-i18n="EnableBackgroundServiceDescription">${i18n.t('EnableBackgroundServiceDescription') || 'Enable the background Node.js service for Discovery and Proxy playback. Disable if you experience performance issues.'}</span>
+                    </div>
+                    <div class="setting-control">
+                        <button class="toggle-switch ${PlayerSettings.get('enableBackgroundService') ? 'active' : ''}" 
+                                id="toggle-background-service" 
+                                data-setting="enableBackgroundService"
+                                tabindex="0">
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Playback Buffering Section -->
-                <h3 class="setting-section-title" data-i18n="PlaybackBuffering">${i18n.t('PlaybackBuffering') || 'Playback Buffering'}</h3>
                 
                 ${(() => {
                 let html = '';
@@ -4622,6 +4678,8 @@ class SettingsPage extends Page {
                 // WebOS Buffering
                 if (currentBackend === 'webos' || (currentBackend === 'auto' && platformInfo.isWebOS)) {
                     html += `
+
+                    <h3 class="setting-section-title" data-i18n="PlaybackBuffering">${i18n.t('PlaybackBuffering') || 'Playback Buffering'}</h3>
                         <div class="setting-item">
                             <div class="setting-label">
                                 <span class="setting-name" data-i18n="WebosBufferGate">${i18n.t('WebosBufferGate') || 'Buffer Gate'}</span>
@@ -4696,6 +4754,7 @@ class SettingsPage extends Page {
                 // Tizen Buffering
                 if (currentBackend === 'avplay' || (currentBackend === 'auto' && platformInfo.isTizen)) {
                     html += `
+                    <h3 class="setting-section-title" data-i18n="PlaybackBuffering">${i18n.t('PlaybackBuffering') || 'Playback Buffering'}</h3>
                         <div class="setting-item">
                             <div class="setting-label">
                                 <span class="setting-name" data-i18n="TizenInitialBuffer">${i18n.t('TizenInitialBuffer') || 'Initial Buffer'}</span>
@@ -4777,6 +4836,7 @@ class SettingsPage extends Page {
                     (currentBackend === 'auto' && !platformInfo.isTizen && !platformInfo.isWebOS)
                 ) {
                     html += `
+                    <h3 class="setting-section-title" data-i18n="PlaybackBuffering">${i18n.t('PlaybackBuffering') || 'Playback Buffering'}</h3>
                         <div class="setting-item">
                             <div class="setting-label">
                                 <span class="setting-name" data-i18n="Html5MaxBufferLength">${i18n.t('Html5MaxBufferLength') || 'Max Buffer Length'}</span>
@@ -4850,59 +4910,7 @@ class SettingsPage extends Page {
                     )}
                             </div>
                         </div>
-                        <h3 class="setting-section-title" data-i18n="TrailersSettings">${i18n.t('TrailersSettings')}</h3>
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="TrailerPlayback">${i18n.t('TrailerPlayback') || 'Trailer Playback'}</span>
-                        <span class="setting-description" data-i18n="TrailerPlaybackDescription">${i18n.t('TrailerPlaybackDescription') || 'Choose how remote trailers are opened'}</span>
-                    </div>
-                    <div class="setting-control">
-                        ${this._renderDropdown(
-                        'trailer-playback-select',
-                        [
-                            {
-                                value: 'internal_proxy',
-                                label: i18n.t('InternalPlayerNew') || 'Internal Player (New)'
-                            },
-                            {
-                                value: 'internal_iframe',
-                                label: i18n.t('InternalPlayerLegacy') || 'Internal Player (Legacy Iframe)'
-                            },
-                            { value: 'external', label: i18n.t('ExternalApp') || 'External App' }
-                        ],
-                        PlayerSettings.get('trailerPlaybackMode')
-                    )}
-                    </div>
-                </div>
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="TrailerAutoChain">${i18n.t('TrailerAutoChain') || 'Auto-play local, then online'}</span>
-                        <span class="setting-description" data-i18n="TrailerAutoChainDescription">${i18n.t('TrailerAutoChainDescription') || 'Plays the server-side trailer first, then jumps straight to the online trailer when it ends. No picking required.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${PlayerSettings.get('trailerAutoChain') ? 'active' : ''}"
-                                id="toggle-trailer-auto-chain"
-                                data-setting="trailerAutoChain"
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="EnableBackgroundService">${i18n.t('EnableBackgroundService') || 'Enable Background Service'}</span>
-                        <span class="setting-description" data-i18n="EnableBackgroundServiceDescription">${i18n.t('EnableBackgroundServiceDescription') || 'Enable the background Node.js service for Discovery and Proxy playback. Disable if you experience performance issues.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${PlayerSettings.get('enableBackgroundService') ? 'active' : ''}" 
-                                id="toggle-background-service" 
-                                data-setting="enableBackgroundService"
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
+                        
                         `;
                 }
 
@@ -6296,8 +6304,7 @@ class SettingsPage extends Page {
     }
 
     _renderAboutTab() {
-        const caps = getDeviceCapabilities();
-
+        // Render the top version and application identity card, keeping the original layout
         return `
             <div class="settings-tab-content">
                 <h2 class="content-title" data-i18n="AboutLitefin">${i18n.t('AboutLitefin')}</h2>
@@ -6305,6 +6312,7 @@ class SettingsPage extends Page {
                     ${i18n.t('AboutTabDescription') || 'View application version, platform specifications, and hardware identity.'}
                 </p>
                 
+                <!-- Main application version banner -->
                 <div class="about-card" tabindex="0">
                     <h3 class="app-version">${i18n.t('AppVersion', [__APP_VERSION__])}</h3>
                     <p class="about-desc" data-i18n="AppDescription">
@@ -6313,149 +6321,159 @@ class SettingsPage extends Page {
                     <p class="about-credits" data-i18n="DevelopedBy">${i18n.t('DevelopedBy')}</p>
                 </div>
 
+                <!-- Community and Resources Section -->
+                <h3 class="setting-section-title" data-i18n="AboutResourcesTitle">${i18n.t('AboutResourcesTitle') || 'Community & Resources'}</h3>
+                <p class="content-subtitle" data-i18n="AboutResourcesDesc" style="margin-top: -10px; margin-bottom: 16px;">
+                    ${i18n.t('AboutResourcesDesc') || 'Explore project source code, install server plugins, access quick issue reporting, join Discord, or support development.'}
+                </p>
 
-                <h3 class="setting-section-title" data-i18n="DeviceInformation">${i18n.t('DeviceInformation')}</h3>
-                <div class="about-card identity-card" tabindex="0">
-                    <div class="identity-grid">
-                        <div class="identity-item">
-                            <span class="identity-label" data-i18n="Model">${i18n.t('Model')}</span>
-                            <span class="identity-value">${caps.modelName}</span>
+                <!-- Compact Action Cards Grid -->
+                <div class="about-actions-grid" id="about-actions-grid">
+                    <!-- Device Information Card (Row 1 Left) -->
+                    <button class="about-action-card focusable" 
+                            id="btn-about-device-info" 
+                            tabindex="0" 
+                            data-focusable="true"
+                            data-nav-right="#btn-about-github"
+                            data-nav-down="#btn-about-issues">
+                        <div class="about-card-icon-wrap" aria-hidden="true">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                                <line x1="8" y1="21" x2="16" y2="21"/>
+                                <line x1="12" y1="17" x2="12" y2="21"/>
+                            </svg>
                         </div>
-                        <div class="identity-item">
-                            <span class="identity-label" data-i18n="Platform">${i18n.t('Platform')}</span>
-                            <span class="identity-value">${(() => {
-                // Specific operating system branch detection
-                if (platformInfo.isAndroid) {
-                    const ver = caps.androidVersion || platformInfo.androidVersion;
-                    return ver ? `Android ${ver}` : 'Android';
-                }
-                if (platformInfo.isWebOS) {
-                    return i18n.t('WebOSValue', [caps.webosVersion]);
-                }
-                if (platformInfo.isTizen) {
-                    return i18n.t('TizenValue', [caps.tizenVersion]);
-                }
-                if (platformInfo.isDesktop) {
-                    return `Desktop (${platformInfo.operatingSystem || 'Native'})`;
-                }
-                return i18n.t('BrowserValue', [caps.browserVersion]);
-            })()}</span>
+                        <div class="about-card-info">
+                            <span class="about-card-title" data-i18n="ViewDeviceInfo">${i18n.t('ViewDeviceInfo') || 'Device Specifications'}</span>
+                            <span class="about-card-desc" data-i18n="ViewDeviceInfoDesc">${i18n.t('ViewDeviceInfoDesc') || 'Hardware model, platform details, resolution, and supported audio/video codecs.'}</span>
                         </div>
-                        <div class="identity-item">
-                            <span class="identity-label" data-i18n="Resolution">${i18n.t('Resolution')}</span>
-                            <span class="identity-value">${i18n.t('ResolutionValue', [
-                caps.screenWidth || (typeof window !== 'undefined' ? (window.screen?.width || window.innerWidth || 1920) : 1920),
-                caps.screenHeight || (typeof window !== 'undefined' ? (window.screen?.height || window.innerHeight || 1080) : 1080),
-                caps.uhd8K ? i18n.t('UHD8K') : caps.uhd ? i18n.t('UHD') : i18n.t('FHD')
-            ])}</span>
+                        <div class="about-card-chevron" aria-hidden="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 18l6-6-6-6"/>
+                            </svg>
                         </div>
-                        <div class="identity-item">
-                            <span class="identity-label" data-i18n="HDRSupport">${i18n.t('HDRSupport')}</span>
-                            <span class="identity-value">${(() => {
-                const resolveOverride = (key, hwSupport) => {
-                    const val = PlayerSettings.get(key);
-                    return val === 'enable' ? true : val === 'disable' ? false : hwSupport;
-                };
-                const userHdr = resolveOverride('enableHDR', !!caps.hdr10);
-                const hwHdr = [
-                    caps.hdr10 ? 'HDR10' : null,
-                    caps.hdr10Plus ? 'HDR10+' : null,
-                    caps.hlg ? 'HLG' : null,
-                    caps.dolbyVision ? i18n.t('DolbyVision') : null
-                ].filter(Boolean);
+                    </button>
 
-                if (hwHdr.length === 0) return i18n.t('SDROnly');
-                if (!userHdr) return `${hwHdr.join(', ')} (${i18n.t('Disabled')})`;
-                return hwHdr.join(', ');
-            })()}</span>
+                    <!-- GitHub Repository Card (Row 1 Right) -->
+                    <button class="about-action-card focusable" 
+                            id="btn-about-github" 
+                            tabindex="0" 
+                            data-focusable="true"
+                            data-nav-left="#btn-about-device-info"
+                            data-nav-down="#btn-about-plugins">
+                        <div class="about-card-icon-wrap" aria-hidden="true">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.1-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/>
+                            </svg>
                         </div>
-                        <div class="identity-item">
-                            <span class="identity-label" data-i18n="VideoCodecs">${i18n.t('VideoCodecs')}</span>
-                            <span class="identity-value">${(() => {
-                const resolveOverride = (key, hwSupport) => {
-                    const val = PlayerSettings.get(key);
-                    return val === 'enable' ? true : val === 'disable' ? false : hwSupport;
-                };
-                // Video codec capabilities encompassing modern broadcast & streaming standards
-                const codecs = [
-                    { name: 'H.264', hw: true, user: true },
-                    {
-                        name: 'HEVC',
-                        hw: caps.hevc,
-                        user: resolveOverride('enableHEVC', caps.hevc)
-                    },
-                    {
-                        name: 'VP9',
-                        hw: caps.vp9,
-                        user: resolveOverride('enableVP9', caps.vp9)
-                    },
-                    {
-                        name: 'VP8',
-                        hw: caps.vp8 !== false,
-                        user: true
-                    },
-                    {
-                        name: 'MPEG-2',
-                        hw: caps.mpeg2video !== false,
-                        user: true
-                    },
-                    {
-                        name: 'AV1',
-                        hw: caps.av1,
-                        user: resolveOverride('enableAV1', caps.av1)
-                    }
-                ];
+                        <div class="about-card-info">
+                            <span class="about-card-title" data-i18n="GitHubRepo">${i18n.t('GitHubRepo') || 'GitHub Repository'}</span>
+                            <span class="about-card-desc" data-i18n="GitHubRepoDesc">${i18n.t('GitHubRepoDesc') || 'Explore the source code, check releases, and follow development.'}</span>
+                        </div>
+                        <div class="about-card-chevron" aria-hidden="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 18l6-6-6-6"/>
+                            </svg>
+                        </div>
+                    </button>
 
-                return codecs
-                    .map((c) => {
-                        if (!c.hw) return `${c.name} (${i18n.t('Unsupported') || 'Unsupported'})`;
-                        if (!c.user) return `${c.name} (${i18n.t('Disabled') || 'Disabled'})`;
-                        return c.name;
-                    })
-                    .join(', ');
-            })()}</span>
+                    <!-- Quick Issue Reporter Card (Row 2 Left) -->
+                    <button class="about-action-card focusable" 
+                            id="btn-about-issues" 
+                            tabindex="0" 
+                            data-focusable="true"
+                            data-nav-up="#btn-about-device-info"
+                            data-nav-right="#btn-about-plugins"
+                            data-nav-down="#btn-about-discord">
+                        <div class="about-card-icon-wrap" aria-hidden="true">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="12" y1="8" x2="12" y2="12"/>
+                                <line x1="12" y1="16" x2="12.01" y2="16"/>
+                            </svg>
                         </div>
-                        <div class="identity-item">
-                            <span class="identity-label" data-i18n="AudioCodecs">${i18n.t('AudioCodecs') || 'Audio Codecs'}</span>
-                            <span class="identity-value">${(() => {
-                const resolveOverride = (key, hwSupport) => {
-                    const val = PlayerSettings.get(key);
-                    return val === 'enable' ? true : val === 'disable' ? false : hwSupport;
-                };
-                // Comprehensive inventory of multi-channel surround and lossless audio decoders
-                const audioCodecs = [
-                    { name: 'AAC', hw: true, user: true },
-                    { name: 'AC-3', hw: caps.ac3 !== false, user: true },
-                    {
-                        name: 'E-AC-3',
-                        hw: caps.eac3 !== false,
-                        user: resolveOverride('enableEac3', caps.eac3 !== false)
-                    },
-                    {
-                        name: 'TrueHD',
-                        hw: caps.truehd !== false,
-                        user: resolveOverride('enableTrueHd', caps.truehd !== false)
-                    },
-                    {
-                        name: 'DTS',
-                        hw: caps.dts !== false,
-                        user: resolveOverride('enableDts', caps.dts !== false)
-                    },
-                    { name: 'FLAC', hw: true, user: true },
-                    { name: 'Opus', hw: true, user: true },
-                    { name: 'MP3', hw: true, user: true }
-                ];
+                        <div class="about-card-info">
+                            <span class="about-card-title" data-i18n="ReportIssue">${i18n.t('ReportIssue') || 'Quick Issue Reporter'}</span>
+                            <span class="about-card-desc" data-i18n="ReportIssueDesc">${i18n.t('ReportIssueDesc') || 'Quickly submit bug reports and feature requests via GitHub.'}</span>
+                        </div>
+                        <div class="about-card-chevron" aria-hidden="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 18l6-6-6-6"/>
+                            </svg>
+                        </div>
+                    </button>
 
-                return audioCodecs
-                    .map((c) => {
-                        if (!c.hw) return `${c.name} (${i18n.t('Unsupported') || 'Unsupported'})`;
-                        if (!c.user) return `${c.name} (${i18n.t('Disabled') || 'Disabled'})`;
-                        return c.name;
-                    })
-                    .join(', ');
-            })()}</span>
+                    <!-- Companion Plugins Card (Row 2 Right) -->
+                    <button class="about-action-card focusable" 
+                            id="btn-about-plugins" 
+                            tabindex="0" 
+                            data-focusable="true"
+                            data-nav-up="#btn-about-github"
+                            data-nav-left="#btn-about-issues"
+                            data-nav-down="#btn-about-support">
+                        <div class="about-card-icon-wrap" aria-hidden="true">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                                <line x1="12" y1="22.08" x2="12" y2="12"/>
+                            </svg>
                         </div>
-                    </div>
+                        <div class="about-card-info">
+                            <span class="about-card-title" data-i18n="CompanionPlugins">${i18n.t('CompanionPlugins') || 'Companion Plugins'}</span>
+                            <span class="about-card-desc" data-i18n="CompanionPluginsDesc">${i18n.t('CompanionPluginsDesc') || 'Download the Litefin companion plugins for Jellyfin and Emby servers.'}</span>
+                        </div>
+                        <div class="about-card-chevron" aria-hidden="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 18l6-6-6-6"/>
+                            </svg>
+                        </div>
+                    </button>
+
+                    <!-- Discord Community Card (Row 3 Left) -->
+                    <button class="about-action-card focusable" 
+                            id="btn-about-discord" 
+                            tabindex="0" 
+                            data-focusable="true"
+                            data-nav-up="#btn-about-issues"
+                            data-nav-right="#btn-about-support">
+                        <div class="about-card-icon-wrap" aria-hidden="true">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994.021-.041.001-.09-.041-.106a13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.929 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.894.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+                            </svg>
+                        </div>
+                        <div class="about-card-info">
+                            <span class="about-card-title" data-i18n="DiscordCommunity">${i18n.t('DiscordCommunity') || 'Discord Community'}</span>
+                            <span class="about-card-desc" data-i18n="DiscordCommunityDesc">${i18n.t('DiscordCommunityDesc') || 'Join our live Discord chat for questions, discussions, and updates.'}</span>
+                        </div>
+                        <div class="about-card-chevron" aria-hidden="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 18l6-6-6-6"/>
+                            </svg>
+                        </div>
+                    </button>
+
+                    <!-- Support & Donations Card (Row 3 Right) -->
+                    <button class="about-action-card focusable" 
+                            id="btn-about-support" 
+                            tabindex="0" 
+                            data-focusable="true"
+                            data-nav-up="#btn-about-plugins"
+                            data-nav-left="#btn-about-discord">
+                        <div class="about-card-icon-wrap" aria-hidden="true">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                            </svg>
+                        </div>
+                        <div class="about-card-info">
+                            <span class="about-card-title" data-i18n="SupportDonations">${i18n.t('SupportDonations') || 'Support & Donations'}</span>
+                            <span class="about-card-desc" data-i18n="SupportDonationsDesc">${i18n.t('SupportDonationsDesc') || 'Help support continuous development of Litefin via Buy Me a Coffee or Sponsors.'}</span>
+                        </div>
+                        <div class="about-card-chevron" aria-hidden="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 18l6-6-6-6"/>
+                            </svg>
+                        </div>
+                    </button>
                 </div>
 
                 <!-- Updates Section -->
@@ -6485,10 +6503,668 @@ class SettingsPage extends Page {
                         </button>
                     </div>
                 </div>
-
-
             </div>
         `;
+    }
+
+    /**
+     * Resolves and structures current device capabilities into displayable sections.
+     * @private
+     * @returns {Object} Structured device specs
+     */
+    _getDeviceSpecsData() {
+        const caps = getDeviceCapabilities();
+
+        // 1. Platform String
+        let platformStr = i18n.t('BrowserValue', [caps.browserVersion]);
+        if (platformInfo.isAndroid) {
+            const ver = caps.androidVersion || platformInfo.androidVersion;
+            platformStr = ver ? `Android ${ver}` : 'Android';
+        } else if (platformInfo.isWebOS) {
+            platformStr = i18n.t('WebOSValue', [caps.webosVersion]);
+        } else if (platformInfo.isTizen) {
+            platformStr = i18n.t('TizenValue', [caps.tizenVersion]);
+        } else if (platformInfo.isDesktop) {
+            platformStr = `Desktop (${platformInfo.operatingSystem || 'Native'})`;
+        }
+
+        // 2. Resolution String
+        const screenW = caps.screenWidth || (typeof window !== 'undefined' ? (window.screen?.width || window.innerWidth || 1920) : 1920);
+        const screenH = caps.screenHeight || (typeof window !== 'undefined' ? (window.screen?.height || window.innerHeight || 1080) : 1080);
+        const resTier = caps.uhd8K ? i18n.t('UHD8K') : caps.uhd ? i18n.t('UHD') : i18n.t('FHD');
+        const resStr = i18n.t('ResolutionValue', [screenW, screenH, resTier]);
+
+        // 3. HDR Formats
+        const resolveOverride = (key, hwSupport) => {
+            const val = PlayerSettings.get(key);
+            return val === 'enable' ? true : val === 'disable' ? false : hwSupport;
+        };
+        const userHdr = resolveOverride('enableHDR', !!caps.hdr10);
+        const hwHdr = [
+            caps.hdr10 ? 'HDR10' : null,
+            caps.hdr10Plus ? 'HDR10+' : null,
+            caps.hlg ? 'HLG' : null,
+            caps.dolbyVision ? i18n.t('DolbyVision') : null
+        ].filter(Boolean);
+
+        let hdrStr = i18n.t('SDROnly');
+        if (hwHdr.length > 0) {
+            hdrStr = userHdr ? hwHdr.join(', ') : `${hwHdr.join(', ')} (${i18n.t('Disabled')})`;
+        }
+
+        // 4. Video Codecs List with statuses
+        const videoCodecs = [
+            { name: 'H.264', hw: true, user: true },
+            { name: 'HEVC', hw: caps.hevc, user: resolveOverride('enableHEVC', caps.hevc) },
+            { name: 'VP9', hw: caps.vp9, user: resolveOverride('enableVP9', caps.vp9) },
+            { name: 'VP8', hw: caps.vp8 !== false, user: true },
+            { name: 'MPEG-2', hw: caps.mpeg2video !== false, user: true },
+            { name: 'AV1', hw: caps.av1, user: resolveOverride('enableAV1', caps.av1) }
+        ];
+
+        // 5. Audio Codecs List with statuses
+        const audioCodecs = [
+            { name: 'AAC', hw: true, user: true },
+            { name: 'AC-3', hw: caps.ac3 !== false, user: true },
+            { name: 'E-AC-3', hw: caps.eac3 !== false, user: resolveOverride('enableEac3', caps.eac3 !== false) },
+            { name: 'TrueHD', hw: caps.truehd !== false, user: resolveOverride('enableTrueHd', caps.truehd !== false) },
+            { name: 'DTS', hw: caps.dts !== false, user: resolveOverride('enableDts', caps.dts !== false) },
+            { name: 'FLAC', hw: true, user: true },
+            { name: 'Opus', hw: true, user: true },
+            { name: 'MP3', hw: true, user: true }
+        ];
+
+        return {
+            modelName: caps.modelName || 'Standard Display',
+            platform: platformStr,
+            resolution: resStr,
+            hdr: hdrStr,
+            videoCodecs,
+            audioCodecs
+        };
+    }
+
+    /**
+     * Safely dispatches an external web URL using the appropriate native platform bridge.
+     * @param {string} url Target URL to launch
+     * @private
+     */
+    _openExternalUrl(url) {
+        log.info(`Opening external link: ${url}`);
+        // Desktop Tauri runtime shell support
+        if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__?.invoke) {
+            window.__TAURI_INTERNALS__.invoke('plugin:opener|open_url', { url })
+                .catch(() => {
+                    try { window.open(url, '_blank'); } catch (_) {}
+                });
+            return;
+        }
+        if (typeof window !== 'undefined' && window.__TAURI__?.core?.invoke) {
+            window.__TAURI__.core.invoke('plugin:opener|open_url', { url })
+                .catch(() => {
+                    try { window.open(url, '_blank'); } catch (_) {}
+                });
+            return;
+        }
+        // Universal web browser fallback
+        try {
+            window.open(url, '_blank');
+        } catch (err) {
+            log.warn('Could not launch window.open:', err);
+        }
+    }
+
+    /**
+     * Closes any currently displayed About modal dialog and safely returns navigation focus.
+     * @private
+     */
+    _closeAboutDialog() {
+        const overlay = this.$('#modal-overlay');
+        if (!overlay || !overlay.classList.contains('visible')) return;
+
+        // Disarm and blur all interactive elements inside dialog to prevent focus latching
+        const actionButtons = overlay.querySelectorAll('button, [tabindex]');
+        actionButtons.forEach((btn) => {
+            btn.setAttribute('tabindex', '-1');
+            btn.setAttribute('disabled', 'true');
+            if (typeof btn.blur === 'function') {
+                btn.blur();
+            }
+        });
+
+        // Hide overlay smoothly
+        overlay.classList.remove('visible');
+        overlay.setAttribute('aria-hidden', 'true');
+        overlay.onclick = null;
+
+        setTimeout(() => {
+            if (overlay) {
+                overlay.innerHTML = '';
+            }
+        }, 300);
+
+        // Pop the modal focus trap and cleanly restore previous focus
+        focusManager.popTrap();
+    }
+
+    /**
+     * Displays the Device Specifications dialog modal with complete hardware identification.
+     * @private
+     */
+    _showDeviceInformationDialog() {
+        const overlay = this.$('#modal-overlay');
+        if (!overlay) return;
+
+        const specs = this._getDeviceSpecsData();
+
+        // Build video codec badges
+        const videoBadgesHtml = specs.videoCodecs
+            .map((c) => {
+                const statusClass = !c.hw ? 'unsupported' : !c.user ? 'disabled' : 'supported';
+                const statusLabel = !c.hw ? ` (${i18n.t('Unsupported') || 'Unsupported'})` : !c.user ? ` (${i18n.t('Disabled') || 'Disabled'})` : '';
+                return `<span class="about-codec-badge ${statusClass}">${c.name}${statusLabel}</span>`;
+            })
+            .join('');
+
+        // Build audio codec badges
+        const audioBadgesHtml = specs.audioCodecs
+            .map((c) => {
+                const statusClass = !c.hw ? 'unsupported' : !c.user ? 'disabled' : 'supported';
+                const statusLabel = !c.hw ? ` (${i18n.t('Unsupported') || 'Unsupported'})` : !c.user ? ` (${i18n.t('Disabled') || 'Disabled'})` : '';
+                return `<span class="about-codec-badge ${statusClass}">${c.name}${statusLabel}</span>`;
+            })
+            .join('');
+
+        overlay.innerHTML = `
+            <div class="settings-modal about-dialog-modal" role="dialog" aria-modal="true" aria-label="${i18n.t('ViewDeviceInfo') || 'Device Specifications'}">
+                <div class="about-dialog-header">
+                    <h2>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                            <line x1="8" y1="21" x2="16" y2="21"/>
+                            <line x1="12" y1="17" x2="12" y2="21"/>
+                        </svg>
+                        ${i18n.t('ViewDeviceInfo') || 'Device Specifications'}
+                    </h2>
+                    <p class="about-dialog-subtitle">Hardware identity, display pipeline, and hardware decoding decoders.</p>
+                </div>
+
+                <div class="about-dialog-content">
+                    <div class="about-device-specs-grid">
+                        <div class="about-device-tile">
+                            <span class="about-device-label" data-i18n="Model">${i18n.t('Model')}</span>
+                            <span class="about-device-val">${specs.modelName}</span>
+                        </div>
+                        <div class="about-device-tile">
+                            <span class="about-device-label" data-i18n="Platform">${i18n.t('Platform')}</span>
+                            <span class="about-device-val">${specs.platform}</span>
+                        </div>
+                        <div class="about-device-tile">
+                            <span class="about-device-label" data-i18n="Resolution">${i18n.t('Resolution')}</span>
+                            <span class="about-device-val">${specs.resolution}</span>
+                        </div>
+                        <div class="about-device-tile">
+                            <span class="about-device-label" data-i18n="HDRSupport">${i18n.t('HDRSupport')}</span>
+                            <span class="about-device-val">${specs.hdr}</span>
+                        </div>
+                        <div class="about-device-tile span-2">
+                            <span class="about-device-label" data-i18n="VideoCodecs">${i18n.t('VideoCodecs')}</span>
+                            <div class="about-badge-cloud">
+                                ${videoBadgesHtml}
+                            </div>
+                        </div>
+                        <div class="about-device-tile span-2">
+                            <span class="about-device-label" data-i18n="AudioCodecs">${i18n.t('AudioCodecs') || 'Audio Codecs'}</span>
+                            <div class="about-badge-cloud">
+                                ${audioBadgesHtml}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="about-dialog-actions" id="device-info-modal-actions">
+                    <!-- Standard modal dismiss button styled for compact viewports -->
+                    <button class="modal-action-btn focusable about-dialog-close-btn" id="btn-device-info-done" tabindex="0" data-focusable="true">
+                        ${i18n.t('Close') || 'Close'}
+                    </button>
+                </div>
+            </div>
+        `;
+
+        overlay.classList.add('visible');
+        overlay.setAttribute('aria-hidden', 'false');
+
+        // Close on backdrop click
+        overlay.onclick = (e) => {
+            if (e.target === overlay) this._closeAboutDialog();
+        };
+
+        const doneBtn = overlay.querySelector('#btn-device-info-done');
+        if (doneBtn) {
+            doneBtn.onclick = (e) => {
+                e.stopPropagation();
+                this._closeAboutDialog();
+            };
+        }
+
+        // Lock focus trap inside modal with focus on Done button
+        focusManager.pushTrap(overlay.querySelector('.about-dialog-modal'), {
+            orientation: 'horizontal',
+            defaultFocusSelector: '#btn-device-info-done'
+        });
+    }
+
+    /**
+     * Displays GitHub repository and issue tracker dialog with 2 QR codes side by side.
+     * @param {'repo'|'issues'} [initialFocus='repo'] Whether to highlight the repository or issues link
+     * @private
+     */
+    _showGitHubDialog(initialFocus = 'repo') {
+        const overlay = this.$('#modal-overlay');
+        if (!overlay) return;
+
+        overlay.innerHTML = `
+            <div class="settings-modal about-dialog-modal" role="dialog" aria-modal="true" aria-label="GitHub & Bug Reporter">
+                <div class="about-dialog-header">
+                    <h2>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.1-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/>
+                        </svg>
+                        GitHub & Bug Tracker
+                    </h2>
+                    <p class="about-dialog-subtitle">Scan with your phone camera, or click to open directly in a browser.</p>
+                </div>
+
+                <div class="about-dialog-content">
+                    <div class="about-qr-grid">
+                        <!-- Repository QR Card -->
+                        <div class="about-qr-card">
+                            <div class="about-qr-image-wrap">
+                                <img src="assets/qr/qr-github.png" class="about-qr-img" alt="GitHub Repository QR Code" />
+                            </div>
+                            <span class="about-qr-title" data-i18n="GitHubRepo">${i18n.t('GitHubRepo') || 'GitHub Repository'}</span>
+                            <span class="about-qr-desc">View source code, release notes, and documentation on GitHub.</span>
+                            <span class="about-qr-url-chip">github.com/MoazSalem/litefin</span>
+                            <button class="btn btn-secondary btn-small focusable about-qr-btn" 
+                                    id="btn-github-open" 
+                                    tabindex="0" 
+                                    data-focusable="true"
+                                    data-nav-right="#btn-issues-open"
+                                    data-nav-down="#btn-about-modal-close">
+                                ${i18n.t('OpenLink') || 'Open Link'}
+                            </button>
+                        </div>
+
+                        <!-- Issues QR Card -->
+                        <div class="about-qr-card">
+                            <div class="about-qr-image-wrap">
+                                <img src="assets/qr/qr-issues.png" class="about-qr-img" alt="GitHub Issues QR Code" />
+                            </div>
+                            <span class="about-qr-title" data-i18n="ReportIssue">${i18n.t('ReportIssue') || 'Quick Issue Reporter'}</span>
+                            <span class="about-qr-desc">Submit bug reports, feature requests, or troubleshooting crash reports.</span>
+                            <span class="about-qr-url-chip">github.com/MoazSalem/litefin/issues</span>
+                            <button class="btn btn-secondary btn-small focusable about-qr-btn" 
+                                    id="btn-issues-open" 
+                                    tabindex="0" 
+                                    data-focusable="true"
+                                    data-nav-left="#btn-github-open"
+                                    data-nav-down="#btn-about-modal-close">
+                                ${i18n.t('OpenLink') || 'Open Link'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="about-dialog-actions" id="github-modal-actions">
+                    <button class="modal-action-btn focusable about-dialog-close-btn" 
+                            id="btn-about-modal-close" 
+                            tabindex="0" 
+                            data-focusable="true"
+                            data-nav-up="#btn-github-open">
+                        ${i18n.t('Close') || 'Close'}
+                    </button>
+                </div>
+            </div>
+        `;
+
+        overlay.classList.add('visible');
+        overlay.setAttribute('aria-hidden', 'false');
+
+        // Bind clicks
+        overlay.onclick = (e) => {
+            if (e.target === overlay) this._closeAboutDialog();
+        };
+
+        const closeBtn = overlay.querySelector('#btn-about-modal-close');
+        if (closeBtn) {
+            closeBtn.onclick = (e) => {
+                e.stopPropagation();
+                this._closeAboutDialog();
+            };
+        }
+
+        const openRepoBtn = overlay.querySelector('#btn-github-open');
+        if (openRepoBtn) {
+            openRepoBtn.onclick = (e) => {
+                e.stopPropagation();
+                this._openExternalUrl('https://github.com/MoazSalem/litefin');
+            };
+        }
+
+        const openIssuesBtn = overlay.querySelector('#btn-issues-open');
+        if (openIssuesBtn) {
+            openIssuesBtn.onclick = (e) => {
+                e.stopPropagation();
+                this._openExternalUrl('https://github.com/MoazSalem/litefin/issues');
+            };
+        }
+
+        // Lock focus trap with contextual initial button
+        focusManager.pushTrap(overlay.querySelector('.about-dialog-modal'), {
+            orientation: 'grid',
+            defaultFocusSelector: initialFocus === 'issues' ? '#btn-issues-open' : '#btn-github-open'
+        });
+    }
+
+    /**
+     * Displays server companion plugins dialog featuring 2 QR codes (Jellyfin & Emby).
+     * @private
+     */
+    _showPluginsDialog() {
+        const overlay = this.$('#modal-overlay');
+        if (!overlay) return;
+
+        overlay.innerHTML = `
+            <div class="settings-modal about-dialog-modal" role="dialog" aria-modal="true" aria-label="Server Companion Plugins">
+                <div class="about-dialog-header">
+                    <h2>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                            <line x1="12" y1="22.08" x2="12" y2="12"/>
+                        </svg>
+                        Server Companion Plugins
+                    </h2>
+                    <p class="about-dialog-subtitle">Install companion plugins on your media server for Seerr integration and cloud settings backup.</p>
+                </div>
+
+                <div class="about-dialog-content">
+                    <div class="about-qr-grid">
+                        <!-- Jellyfin Plugin QR Card -->
+                        <div class="about-qr-card">
+                            <div class="about-qr-image-wrap">
+                                <img src="assets/qr/qr-plugin-jellyfin.png" class="about-qr-img" alt="Jellyfin Plugin QR Code" />
+                            </div>
+                            <span class="about-qr-title">Jellyfin Plugin</span>
+                            <span class="about-qr-desc">Official server companion plugin for Jellyfin server instances.</span>
+                            <span class="about-qr-url-chip">github.com/MoazSalem/litefin-plugin</span>
+                            <button class="btn btn-secondary btn-small focusable about-qr-btn" 
+                                    id="btn-plugin-jellyfin-open" 
+                                    tabindex="0" 
+                                    data-focusable="true"
+                                    data-nav-right="#btn-plugin-emby-open"
+                                    data-nav-down="#btn-about-modal-close">
+                                ${i18n.t('OpenLink') || 'Open Link'}
+                            </button>
+                        </div>
+
+                        <!-- Emby Plugin QR Card -->
+                        <div class="about-qr-card">
+                            <div class="about-qr-image-wrap">
+                                <img src="assets/qr/qr-plugin-emby.png" class="about-qr-img" alt="Emby Plugin QR Code" />
+                            </div>
+                            <span class="about-qr-title">Emby Plugin</span>
+                            <span class="about-qr-desc">Official server companion plugin for Emby server instances.</span>
+                            <span class="about-qr-url-chip">github.com/MoazSalem/litefin-plugin-emby</span>
+                            <button class="btn btn-secondary btn-small focusable about-qr-btn" 
+                                    id="btn-plugin-emby-open" 
+                                    tabindex="0" 
+                                    data-focusable="true"
+                                    data-nav-left="#btn-plugin-jellyfin-open"
+                                    data-nav-down="#btn-about-modal-close">
+                                ${i18n.t('OpenLink') || 'Open Link'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="about-dialog-actions" id="plugins-modal-actions">
+                    <button class="modal-action-btn focusable about-dialog-close-btn" 
+                            id="btn-about-modal-close" 
+                            tabindex="0" 
+                            data-focusable="true"
+                            data-nav-up="#btn-plugin-jellyfin-open">
+                        ${i18n.t('Close') || 'Close'}
+                    </button>
+                </div>
+            </div>
+        `;
+
+        overlay.classList.add('visible');
+        overlay.setAttribute('aria-hidden', 'false');
+
+        overlay.onclick = (e) => {
+            if (e.target === overlay) this._closeAboutDialog();
+        };
+
+        const closeBtn = overlay.querySelector('#btn-about-modal-close');
+        if (closeBtn) {
+            closeBtn.onclick = (e) => {
+                e.stopPropagation();
+                this._closeAboutDialog();
+            };
+        }
+
+        const openJfBtn = overlay.querySelector('#btn-plugin-jellyfin-open');
+        if (openJfBtn) {
+            openJfBtn.onclick = (e) => {
+                e.stopPropagation();
+                this._openExternalUrl('https://github.com/MoazSalem/litefin-plugin');
+            };
+        }
+
+        const openEmbyBtn = overlay.querySelector('#btn-plugin-emby-open');
+        if (openEmbyBtn) {
+            openEmbyBtn.onclick = (e) => {
+                e.stopPropagation();
+                this._openExternalUrl('https://github.com/MoazSalem/litefin-plugin-emby');
+            };
+        }
+
+        focusManager.pushTrap(overlay.querySelector('.about-dialog-modal'), {
+            orientation: 'grid',
+            defaultFocusSelector: '#btn-plugin-jellyfin-open'
+        });
+    }
+
+    /**
+     * Displays the Discord Community invitation dialog featuring 1 centered QR code.
+     * @private
+     */
+    _showDiscordDialog() {
+        const overlay = this.$('#modal-overlay');
+        if (!overlay) return;
+
+        overlay.innerHTML = `
+            <div class="settings-modal about-dialog-modal compact-modal" role="dialog" aria-modal="true" aria-label="Discord Community">
+                <div class="about-dialog-header">
+                    <h2>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994.021-.041.001-.09-.041-.106a13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.929 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.894.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+                        </svg>
+                        ${i18n.t('DiscordCommunity') || 'Discord Community'}
+                    </h2>
+                    <p class="about-dialog-subtitle">Scan to join the official Litefin Discord server. Connect with other users, ask questions, and share feedback.</p>
+                </div>
+
+                <div class="about-dialog-content">
+                    <div class="about-qr-grid">
+                        <div class="about-qr-card" style="max-width: 380px;">
+                            <div class="about-qr-image-wrap">
+                                <img src="assets/qr/qr-discord.png" class="about-qr-img" alt="Discord Invite QR Code" />
+                            </div>
+                            <span class="about-qr-title">Official Discord Server</span>
+                            <span class="about-qr-desc">Real-time troubleshooting, alpha announcements, and community discussions.</span>
+                            <span class="about-qr-url-chip">discord.gg/N3VpazBtTx</span>
+                            <button class="btn btn-secondary btn-small focusable about-qr-btn" 
+                                    id="btn-discord-open" 
+                                    tabindex="0" 
+                                    data-focusable="true"
+                                    data-nav-down="#btn-about-modal-close">
+                                ${i18n.t('OpenLink') || 'Open Link'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="about-dialog-actions" id="discord-modal-actions">
+                    <button class="modal-action-btn focusable about-dialog-close-btn" 
+                            id="btn-about-modal-close" 
+                            tabindex="0" 
+                            data-focusable="true"
+                            data-nav-up="#btn-discord-open">
+                        ${i18n.t('Close') || 'Close'}
+                    </button>
+                </div>
+            </div>
+        `;
+
+        overlay.classList.add('visible');
+        overlay.setAttribute('aria-hidden', 'false');
+
+        overlay.onclick = (e) => {
+            if (e.target === overlay) this._closeAboutDialog();
+        };
+
+        const closeBtn = overlay.querySelector('#btn-about-modal-close');
+        if (closeBtn) {
+            closeBtn.onclick = (e) => {
+                e.stopPropagation();
+                this._closeAboutDialog();
+            };
+        }
+
+        const openDiscordBtn = overlay.querySelector('#btn-discord-open');
+        if (openDiscordBtn) {
+            openDiscordBtn.onclick = (e) => {
+                e.stopPropagation();
+                this._openExternalUrl('https://discord.gg/N3VpazBtTx');
+            };
+        }
+
+        focusManager.pushTrap(overlay.querySelector('.about-dialog-modal'), {
+            orientation: 'grid',
+            defaultFocusSelector: '#btn-discord-open'
+        });
+    }
+
+    /**
+     * Displays the Support & Donations dialog featuring 2 QR codes (Buy Me a Coffee & Sponsors).
+     * @private
+     */
+    _showSupportDialog() {
+        const overlay = this.$('#modal-overlay');
+        if (!overlay) return;
+
+        overlay.innerHTML = `
+            <div class="settings-modal about-dialog-modal" role="dialog" aria-modal="true" aria-label="Support Litefin">
+                <div class="about-dialog-header">
+                    <h2>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                        </svg>
+                        Support & Donations
+                    </h2>
+                    <p class="about-dialog-subtitle">Litefin is free and open-source. Help back continuous development and infrastructure support.</p>
+                </div>
+
+                <div class="about-dialog-content">
+                    <div class="about-qr-grid">
+                        <!-- Buy Me a Coffee QR Card -->
+                        <div class="about-qr-card">
+                            <div class="about-qr-image-wrap">
+                                <img src="assets/qr/qr-donation.png" class="about-qr-img" alt="Buy Me A Coffee QR Code" />
+                            </div>
+                            <span class="about-qr-title">Buy Me a Coffee</span>
+                            <span class="about-qr-desc">Support developer coffee fuels and ongoing rapid release cycles!</span>
+                            <span class="about-qr-url-chip">buymeacoffee.com/moazsalem</span>
+                            <button class="btn btn-secondary btn-small focusable about-qr-btn" 
+                                    id="btn-support-coffee-open" 
+                                    tabindex="0" 
+                                    data-focusable="true"
+                                    data-nav-right="#btn-support-sponsors-open"
+                                    data-nav-down="#btn-about-modal-close">
+                                ${i18n.t('OpenLink') || 'Open Link'}
+                            </button>
+                        </div>
+
+                        <!-- GitHub Sponsors QR Card -->
+                        <div class="about-qr-card">
+                            <div class="about-qr-image-wrap">
+                                <img src="assets/qr/qr-sponsors.png" class="about-qr-img" alt="GitHub Sponsors QR Code" />
+                            </div>
+                            <span class="about-qr-title">GitHub Sponsors</span>
+                            <span class="about-qr-desc">Become an official sponsor of the Litefin repository.</span>
+                            <span class="about-qr-url-chip">github.com/sponsors/MoazSalem</span>
+                            <button class="btn btn-secondary btn-small focusable about-qr-btn" 
+                                    id="btn-support-sponsors-open" 
+                                    tabindex="0" 
+                                    data-focusable="true"
+                                    data-nav-left="#btn-support-coffee-open"
+                                    data-nav-down="#btn-about-modal-close">
+                                ${i18n.t('OpenLink') || 'Open Link'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="about-dialog-actions" id="support-modal-actions">
+                    <button class="modal-action-btn focusable about-dialog-close-btn" 
+                            id="btn-about-modal-close" 
+                            tabindex="0" 
+                            data-focusable="true"
+                            data-nav-up="#btn-support-coffee-open">
+                        ${i18n.t('Close') || 'Close'}
+                    </button>
+                </div>
+            </div>
+        `;
+
+        overlay.classList.add('visible');
+        overlay.setAttribute('aria-hidden', 'false');
+
+        overlay.onclick = (e) => {
+            if (e.target === overlay) this._closeAboutDialog();
+        };
+
+        const closeBtn = overlay.querySelector('#btn-about-modal-close');
+        if (closeBtn) {
+            closeBtn.onclick = (e) => {
+                e.stopPropagation();
+                this._closeAboutDialog();
+            };
+        }
+
+        const openCoffeeBtn = overlay.querySelector('#btn-support-coffee-open');
+        if (openCoffeeBtn) {
+            openCoffeeBtn.onclick = (e) => {
+                e.stopPropagation();
+                this._openExternalUrl('https://www.buymeacoffee.com/moazsalem');
+            };
+        }
+
+        const openSponsorsBtn = overlay.querySelector('#btn-support-sponsors-open');
+        if (openSponsorsBtn) {
+            openSponsorsBtn.onclick = (e) => {
+                e.stopPropagation();
+                this._openExternalUrl('https://github.com/sponsors/MoazSalem');
+            };
+        }
+
+        focusManager.pushTrap(overlay.querySelector('.about-dialog-modal'), {
+            orientation: 'grid',
+            defaultFocusSelector: '#btn-support-coffee-open'
+        });
     }
 
     _renderBackupTab() {
@@ -9169,6 +9845,20 @@ class SettingsPage extends Page {
             });
         }
 
+        // =====================================================================
+        // Fallback Audio Languages Multi-Slot Modal Trigger
+        // =====================================================================
+        // Opens the unified modal containing the 3-slot priority tab switcher
+        // at the top for selecting fallbacks 1, 2, and 3 under a single setting.
+        const btnAudioFallbacks = this.$('#audio-fallback-languages-btn');
+        if (btnAudioFallbacks) {
+            btnAudioFallbacks.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                await this._openAudioFallbackModal();
+            });
+        }
+
         // Keep loading style button label in sync
         eventBus.on('loaderStyle:changed', ({ style }) => {
             const triggerLabel = this.$('#loader-style-btn-label');
@@ -9482,6 +10172,7 @@ class SettingsPage extends Page {
         // Check if this dropdown is a language selection menu
         const isLanguageSelect = selectId === 'app-language-select' ||
             selectId === 'audio-lang-select' ||
+            isAudioFallbackSelect(selectId) ||
             selectId === 'subtitle-lang-select' ||
             (title && (title.toLowerCase().includes('language') || title.toLowerCase().includes('idioma') || title.toLowerCase().includes('langue') || title.toLowerCase().includes('sprache')));
 
@@ -9754,6 +10445,7 @@ class SettingsPage extends Page {
 
         // Unregister modal focus
         focusManager.unregister('modal-filter-pills');
+        focusManager.unregister('modal-slot-pills');
         focusManager.unregister('modal-options');
         focusManager.unregister('modal-loader-options');
         focusManager.unregister('modal-color-grid');
@@ -9770,6 +10462,454 @@ class SettingsPage extends Page {
 
         this._prevFocus = null;
         this._prevSection = null;
+    }
+
+    /**
+     * Get a human-readable summary of configured fallback audio languages.
+     * Delegates to the unified preferences summary helper.
+     * @returns {string} Summary string formatted for the settings dropdown trigger
+     */
+    _getAudioFallbackSummaryLabel() {
+        return this._getAudioPreferencesSummaryLabel();
+    }
+
+    /**
+     * Get a human-readable summary of preferred and fallback audio languages.
+     * Formats configured audio priorities (e.g. "Japanese • 1: English")
+     * or defaults to "Default" when no custom preferences are specified.
+     * @returns {string} Formatted summary string for the settings trigger button
+     */
+    _getAudioPreferencesSummaryLabel() {
+        // Retrieve preferred audio language setting
+        const rawPref = storage.getItem('pref:audioLang');
+        const prefVal = (!rawPref || rawPref === 'Default') ? 'Default' : rawPref;
+        let prefLabel = i18n.t('Default') || 'Default';
+
+        // Match localized label for preferred language if available
+        if (prefVal !== 'Default') {
+            const match = (this.prefLanguages || []).find((o) => String(o.value) === String(prefVal));
+            prefLabel = match ? match.label : prefVal;
+        }
+
+        // Collect configured fallback slots
+        const fallbackParts = [];
+        for (const priority of AUDIO_FALLBACK_SLOTS) {
+            const raw = storage.getItem(`pref:audioLangFallback${priority}`);
+            if (raw && raw !== 'Default' && raw !== 'none') {
+                const match = (this.prefLanguages || []).find((o) => String(o.value) === String(raw));
+                const name = match ? match.label : raw;
+                fallbackParts.push(`${priority}: ${name}`);
+            }
+        }
+
+        // Return combined summary string
+        if (fallbackParts.length > 0) {
+            return `${prefLabel} • ${fallbackParts.join(' • ')}`;
+        }
+        return prefLabel;
+    }
+
+    /**
+     * Open the unified preferred and fallback audio languages configuration modal.
+     * Renders a 2-tier tab bar:
+     * - Tier 1 (Filter): 2 tabs for Favorites and All Languages
+     * - Tier 2 (Priority Slot): 4 tabs for Preferred Language, Fallback 1, Fallback 2, Fallback 3
+     * Allows selecting languages per slot with remote D-pad Left/Right navigation across slots.
+     */
+    async _openAudioFallbackModal() {
+        const overlay = this.$('#modal-overlay');
+        if (!overlay) return;
+
+        // Ensure cultures are loaded from server before displaying language options
+        if (!cachedCultures || !this.prefLanguages || this.prefLanguages.length <= 1) {
+            try {
+                const cultures = await api.getCultures();
+                if (cultures && Array.isArray(cultures)) {
+                    languageManager.registerCultures(cultures);
+                    cachedCultures = cultures
+                        .map((c) => ({
+                            value: c.ThreeLetterISOLanguageName || c.Name,
+                            label: i18n.ensureBiDi(c.DisplayName),
+                            ThreeLetterISOLanguageName: c.ThreeLetterISOLanguageName,
+                            TwoLetterISOLanguageName: c.TwoLetterISOLanguageName,
+                            DisplayName: c.DisplayName
+                        }))
+                        .sort((a, b) => a.label.localeCompare(b.label));
+                    this.prefLanguages = cachedCultures;
+                }
+            } catch (err) {
+                log.error('Failed to load cultures for audio language modal:', err);
+            }
+        }
+
+        // Store focus context for restoration upon closing
+        this._prevFocus = focusManager.getFocused();
+        this._prevSection = focusManager.getActiveSection();
+
+        // 4 priority slots: 'pref' (preferred), '1', '2', '3' (fallbacks)
+        const SLOTS = ['pref', '1', '2', '3'];
+        let activeSlot = 'pref';
+
+        // Filter state: default to 'favorites' if favorites exist, otherwise 'all'
+        let activeFilter = languageManager.hasFavorites() ? 'favorites' : 'all';
+
+        // Clean list of server cultures (excluding sentinel keys)
+        const validLanguages = (this.prefLanguages || []).filter(
+            (o) => o.value !== 'Default' && o.value !== 'none'
+        );
+
+        // Helper: retrieve human-readable display label, short code, and value for a given slot
+        const getSlotValueAndLabel = (slot) => {
+            if (slot === 'pref') {
+                const raw = storage.getItem('pref:audioLang');
+                const val = (!raw || raw === 'Default') ? 'Default' : raw;
+                if (val === 'Default') {
+                    return {
+                        value: 'Default',
+                        label: i18n.t('Default') || 'Default',
+                        shortLabel: i18n.t('Default') || 'Default'
+                    };
+                }
+                const match = validLanguages.find((o) => String(o.value) === String(val));
+                const fullLabel = match ? match.label : val;
+                // Extract 2-letter ISO language code (e.g., 'en', 'ar') for ultra-compact tab headers
+                const twoLetter = match?.TwoLetterISOLanguageName || languageManager.normalizeLanguage(val)?.twoLetter;
+                const shortCode = (twoLetter || match?.ThreeLetterISOLanguageName || val).toLowerCase();
+                return { value: val, label: fullLabel, shortLabel: shortCode };
+            } else {
+                const raw = storage.getItem(`pref:audioLangFallback${slot}`);
+                const val = (!raw || raw === 'Default' || raw === 'none') ? 'none' : raw;
+                if (val === 'none') {
+                    return {
+                        value: 'none',
+                        label: i18n.t('None') || 'None',
+                        shortLabel: i18n.t('None') || 'None'
+                    };
+                }
+                const match = validLanguages.find((o) => String(o.value) === String(val));
+                const fullLabel = match ? match.label : val;
+                // Extract 2-letter ISO language code (e.g., 'en', 'ar') for ultra-compact tab headers
+                const twoLetter = match?.TwoLetterISOLanguageName || languageManager.normalizeLanguage(val)?.twoLetter;
+                const shortCode = (twoLetter || match?.ThreeLetterISOLanguageName || val).toLowerCase();
+                return { value: val, label: fullLabel, shortLabel: shortCode };
+            }
+        };
+
+        const renderModal = (focusTarget = 'options') => {
+            // Read active slot's current setting
+            const currentSlotInfo = getSlotValueAndLabel(activeSlot);
+            const currentSlotVal = currentSlotInfo.value;
+
+            // Slot special top option ('Default' for pref, 'None' for fallbacks)
+            const specialOption = activeSlot === 'pref'
+                ? { value: 'Default', label: i18n.t('Default') || 'Default' }
+                : { value: 'none', label: i18n.t('None') || 'None' };
+
+            // Languages filtered according to active filter tab
+            const filteredLanguages = activeFilter === 'favorites'
+                ? languageManager.filterOptions(validLanguages)
+                : validLanguages;
+
+            // Full options list for the active slot
+            const slotOptions = [specialOption, ...filteredLanguages];
+
+            // Counts for filter pills
+            const favoritesCount = validLanguages.filter((o) => languageManager.isFavorite(o)).length;
+            const allCount = validLanguages.length;
+
+            // Tier 1: 2 Filter Tabs (Favorites vs All Languages)
+            const filterPillsHtml = `
+                <div class="modal-filter-pills has-slot-subrow" id="modal-lang-filter-pills">
+                    <button class="modal-filter-pill ${activeFilter === 'favorites' ? 'active' : ''}" 
+                            data-filter="favorites" 
+                            tabindex="0">
+                        ★ ${i18n.t('FavoritesOnly') || 'Favorites'} (${favoritesCount})
+                    </button>
+                    <button class="modal-filter-pill ${activeFilter === 'all' ? 'active' : ''}" 
+                            data-filter="all" 
+                            tabindex="0">
+                        ${i18n.t('AllLanguages') || 'All Languages'} (${allCount})
+                    </button>
+                </div>
+            `;
+
+            // Tier 2: 4 Slot Tabs (Preferred, Fallback 1, Fallback 2, Fallback 3)
+            const slotPillsHtml = `
+                <div class="modal-slot-pills" id="modal-audio-slot-pills">
+                    ${SLOTS.map((slot) => {
+                        const isActive = slot === activeSlot;
+                        const info = getSlotValueAndLabel(slot);
+
+                        // Concise tab title prefix: "Preferred" or "Fallback 1", "Fallback 2", etc.
+                        const displayTitle = slot === 'pref'
+                            ? (i18n.t('Preferred') || 'Preferred')
+                            : `${i18n.t('Fallback') || 'Fallback'} ${slot}`;
+
+                        return `
+                            <button class="modal-filter-pill modal-slot-pill ${isActive ? 'active' : ''}" 
+                                    data-slot="${slot}" 
+                                    tabindex="0"
+                                    title="${displayTitle}: ${escapeHtml(info.label)}">
+                                <span class="slot-pill-title">${displayTitle}:</span>
+                                <span class="slot-pill-val">${escapeHtml(info.shortLabel)}</span>
+                            </button>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+
+            // Tier 3: Language Options List
+            const optionsHtml = slotOptions.map((opt) => {
+                const isSelected = String(opt.value) === String(currentSlotVal);
+                const valStr = String(opt.value).toLowerCase();
+                const isSpecial = valStr === 'none' || valStr === 'default' || valStr === 'auto' || valStr === '-1';
+
+                let starBtnHtml = '';
+                if (!isSpecial) {
+                    const isFav = languageManager.isFavorite(opt);
+                    starBtnHtml = `
+                        <span class="modal-star-btn ${isFav ? 'active' : ''}" 
+                              data-value="${opt.value}" 
+                              title="Toggle Favorite" 
+                              role="button" 
+                              aria-label="Toggle Favorite">
+                            ${isFav ? '★' : '☆'}
+                        </span>
+                    `;
+                }
+
+                return `
+                    <button class="modal-option-btn ${isSelected ? 'selected' : ''}" 
+                            data-value="${opt.value}" 
+                            tabindex="0">
+                        <span class="modal-option-label">${escapeHtml(i18n.ensureBiDi(opt.label))}</span>
+                        ${starBtnHtml}
+                    </button>
+                `;
+            }).join('');
+
+            // Assemble Modal Overlay Markup
+            overlay.innerHTML = `
+                <div class="settings-modal" role="dialog" aria-modal="true">
+                    <div class="modal-header">
+                        <h2>${i18n.t('LabelAudioLanguagePreference') || 'Preferred audio language'}</h2>
+                    </div>
+                    ${filterPillsHtml}
+                    ${slotPillsHtml}
+                    <div class="modal-options">
+                        ${optionsHtml}
+                    </div>
+                    <div class="modal-actions">
+                        <button class="modal-action-btn primary" id="btn-modal-done" tabindex="0" data-i18n="Done">${i18n.t('Done') || 'Done'}</button>
+                    </div>
+                </div>
+            `;
+
+            // Wire option clicks
+            overlay.querySelectorAll('.modal-option-btn').forEach((btn) => {
+                btn.addEventListener('click', (e) => {
+                    // Check if star favorite button was clicked
+                    if (e.target.closest('.modal-star-btn')) {
+                        e.stopPropagation();
+                        const starBtn = e.target.closest('.modal-star-btn');
+                        const val = starBtn.dataset.value;
+                        const matchedOpt = validLanguages.find((o) => String(o.value) === String(val)) || val;
+                        const isNowFav = languageManager.toggleFavorite(matchedOpt);
+
+                        if (activeFilter === 'all') {
+                            // Update star in-place without rebuilding options
+                            starBtn.classList.toggle('active', isNowFav);
+                            starBtn.textContent = isNowFav ? '★' : '☆';
+                            // Update Favorites count pill in Row 1
+                            const favPill = overlay.querySelector('.modal-filter-pill[data-filter="favorites"]');
+                            if (favPill) {
+                                const newCount = validLanguages.filter((o) => languageManager.isFavorite(o)).length;
+                                favPill.textContent = `★ ${i18n.t('FavoritesOnly') || 'Favorites'} (${newCount})`;
+                            }
+                        } else {
+                            // In favorites view, removing favorite removes option, preserve focus
+                            const currentIdx = Array.from(overlay.querySelectorAll('.modal-option-btn')).indexOf(btn);
+                            renderModal('options');
+                            const remaining = overlay.querySelectorAll('.modal-option-btn');
+                            if (remaining.length > 0) {
+                                const targetIdx = Math.min(currentIdx, remaining.length - 1);
+                                focusManager.setActiveSection('modal-options');
+                                focusManager.focusElement(remaining[targetIdx]);
+                            }
+                        }
+                        return;
+                    }
+
+                    e.stopPropagation();
+                    const chosenValue = btn.dataset.value;
+
+                    // Persist selection according to active slot
+                    if (activeSlot === 'pref') {
+                        storage.setItem('pref:audioLang', chosenValue);
+                    } else {
+                        storage.setItem(`pref:audioLangFallback${activeSlot}`, chosenValue);
+                    }
+
+                    // Update Settings page summary trigger button label
+                    const triggerBtn = this.$('#audio-fallback-languages-btn .btn-label');
+                    if (triggerBtn) {
+                        triggerBtn.innerText = this._getAudioPreferencesSummaryLabel();
+                    }
+
+                    // Re-render modal to refresh active tab text and selection checkmark
+                    renderModal('options');
+                });
+            });
+
+            // Wire Tier 1 Filter Pill Clicks (Favorites vs All)
+            overlay.querySelectorAll('#modal-lang-filter-pills .modal-filter-pill').forEach((pill) => {
+                pill.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const targetFilter = pill.dataset.filter;
+                    if (targetFilter && targetFilter !== activeFilter) {
+                        activeFilter = targetFilter;
+                        renderModal('filter-pills');
+                    }
+                });
+            });
+
+            // Wire Tier 2 Slot Pill Clicks (Preferred, 1, 2, 3)
+            overlay.querySelectorAll('#modal-audio-slot-pills .modal-slot-pill').forEach((pill) => {
+                pill.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const targetSlot = pill.dataset.slot;
+                    if (targetSlot && targetSlot !== activeSlot) {
+                        activeSlot = targetSlot;
+                        renderModal('slot-pills');
+                    }
+                });
+            });
+
+            // Wire Done button
+            overlay.querySelector('#btn-modal-done')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._closeSelectionModal();
+            });
+
+            // Backdrop dismiss
+            overlay.onclick = (e) => {
+                if (e.target === overlay) {
+                    e.stopPropagation();
+                    this._closeSelectionModal();
+                }
+            };
+
+            // Helper to navigate between slots via Left/Right keys
+            const switchSlot = (direction, focusTarget) => {
+                const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+                const currentIndex = SLOTS.indexOf(activeSlot);
+                const delta = direction === 'left' ? (isRtl ? 1 : -1) : (isRtl ? -1 : 1);
+                const nextIndex = currentIndex + delta;
+                if (nextIndex >= 0 && nextIndex < SLOTS.length) {
+                    activeSlot = SLOTS[nextIndex];
+                    renderModal(focusTarget);
+                    return true;
+                }
+                return false;
+            };
+
+            // Register Focus Section 1: Tier 1 Filter Pills (Favorites vs All)
+            this.registerFocusSection('modal-filter-pills', overlay.querySelector('#modal-lang-filter-pills'), {
+                orientation: 'horizontal',
+                leaveDown: 'modal-slot-pills',
+                onMove: (direction) => {
+                    const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+                    if (direction === 'left') {
+                        const targetFilter = isRtl ? 'all' : 'favorites';
+                        if (activeFilter !== targetFilter) {
+                            activeFilter = targetFilter;
+                            renderModal('filter-pills');
+                            return true;
+                        }
+                    } else if (direction === 'right') {
+                        const targetFilter = isRtl ? 'favorites' : 'all';
+                        if (activeFilter !== targetFilter) {
+                            activeFilter = targetFilter;
+                            renderModal('filter-pills');
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+            });
+
+            // Register Focus Section 2: Tier 2 Slot Pills (Preferred, 1, 2, 3)
+            this.registerFocusSection('modal-slot-pills', overlay.querySelector('#modal-audio-slot-pills'), {
+                orientation: 'horizontal',
+                leaveUp: 'modal-filter-pills',
+                leaveDown: 'modal-options',
+                onMove: (direction) => {
+                    if (direction === 'left' || direction === 'right') {
+                        return switchSlot(direction, 'slot-pills');
+                    }
+                    return false;
+                }
+            });
+
+            // Register Focus Section 3: Tier 3 Options List with Left/Right slot switching
+            this.registerFocusSection('modal-options', overlay.querySelector('.modal-options'), {
+                orientation: 'vertical',
+                leaveUp: 'modal-slot-pills',
+                leaveDown: 'modal-actions',
+                enterTo: 'last-focused',
+                onMove: (direction) => {
+                    if (direction === 'left' || direction === 'right') {
+                        return switchSlot(direction, 'options');
+                    }
+                    return false;
+                }
+            });
+
+            // Register Focus Section 4: Modal Actions (Done Button)
+            this.registerFocusSection('modal-actions', overlay.querySelector('.modal-actions'), {
+                orientation: 'horizontal',
+                leaveUp: 'modal-options'
+            });
+
+            // Apply focus according to target
+            if (focusTarget === 'filter-pills') {
+                focusManager.setActiveSection('modal-filter-pills');
+                setTimeout(() => {
+                    const activePill = overlay.querySelector(`#modal-lang-filter-pills .modal-filter-pill[data-filter="${activeFilter}"]`);
+                    if (activePill) focusManager.focusElement(activePill);
+                }, 40);
+            } else if (focusTarget === 'slot-pills') {
+                focusManager.setActiveSection('modal-slot-pills');
+                setTimeout(() => {
+                    const activePill = overlay.querySelector(`#modal-audio-slot-pills .modal-slot-pill[data-slot="${activeSlot}"]`);
+                    if (activePill) focusManager.focusElement(activePill);
+                }, 40);
+            } else if (focusTarget === 'actions') {
+                focusManager.setActiveSection('modal-actions');
+                setTimeout(() => {
+                    const doneBtn = overlay.querySelector('#btn-modal-done');
+                    if (doneBtn) focusManager.focusElement(doneBtn);
+                }, 40);
+            } else {
+                focusManager.setActiveSection('modal-options');
+                setTimeout(() => {
+                    const selected = overlay.querySelector('.modal-option-btn.selected') || overlay.querySelector('.modal-option-btn');
+                    if (selected) {
+                        focusManager.focusElement(selected);
+                        if (typeof selected.scrollIntoView === 'function') {
+                            selected.scrollIntoView({ block: 'nearest' });
+                        }
+                    }
+                }, 40);
+            }
+        };
+
+        // Show Overlay
+        overlay.classList.add('visible');
+        overlay.setAttribute('aria-hidden', 'false');
+
+        // Initial render focusing the options list
+        renderModal('options');
     }
 
     /**
@@ -10449,6 +11589,9 @@ class SettingsPage extends Page {
             'max-bitrate-select': { key: 'maxBitrateInternet', type: 'player' },
             'trailer-playback-select': { key: 'trailerPlaybackMode', type: 'player' },
             'audio-lang-select': { key: 'pref:audioLang', type: 'local' },
+            'audio-fallback-lang-1-select': { key: 'pref:audioLangFallback1', type: 'local' },
+            'audio-fallback-lang-2-select': { key: 'pref:audioLangFallback2', type: 'local' },
+            'audio-fallback-lang-3-select': { key: 'pref:audioLangFallback3', type: 'local' },
             'subtitle-lang-select': { key: 'pref:subtitleLang', type: 'local' },
             'skip-forward-select': { key: 'skipForwardLength', type: 'player' },
             'skip-back-select': { key: 'skipBackLength', type: 'player' },
@@ -11578,6 +12721,51 @@ class SettingsPage extends Page {
                 storage.setItem('pref:showTechnicalDetails', newValue.toString());
                 showTechnicalDetailsToggle.classList.toggle('active', newValue);
                 log.info(`Show Technical Details set to: ${newValue}`);
+            });
+        }
+
+        // ==========================================
+        // ABOUT TAB INTERACTIVE RESOURCE CARDS
+        // ==========================================
+        const btnAboutDeviceInfo = this.$('#btn-about-device-info');
+        if (btnAboutDeviceInfo) {
+            btnAboutDeviceInfo.addEventListener('click', () => {
+                this._showDeviceInformationDialog();
+            });
+        }
+
+        const btnAboutGithub = this.$('#btn-about-github');
+        if (btnAboutGithub) {
+            btnAboutGithub.addEventListener('click', () => {
+                this._showGitHubDialog('repo');
+            });
+        }
+
+        const btnAboutIssues = this.$('#btn-about-issues');
+        if (btnAboutIssues) {
+            btnAboutIssues.addEventListener('click', () => {
+                this._showGitHubDialog('issues');
+            });
+        }
+
+        const btnAboutPlugins = this.$('#btn-about-plugins');
+        if (btnAboutPlugins) {
+            btnAboutPlugins.addEventListener('click', () => {
+                this._showPluginsDialog();
+            });
+        }
+
+        const btnAboutDiscord = this.$('#btn-about-discord');
+        if (btnAboutDiscord) {
+            btnAboutDiscord.addEventListener('click', () => {
+                this._showDiscordDialog();
+            });
+        }
+
+        const btnAboutSupport = this.$('#btn-about-support');
+        if (btnAboutSupport) {
+            btnAboutSupport.addEventListener('click', () => {
+                this._showSupportDialog();
             });
         }
 
@@ -13116,7 +14304,28 @@ class SettingsPage extends Page {
                             return true; // Handled
                         }
                     } else {
-                        // If not in a setting-item (fallback), just escape
+                        // Check if navigating inside the About action cards grid
+                        const aboutGrid = currentElement.closest('.about-actions-grid');
+                        if (aboutGrid) {
+                            // Collect focusable cards inside the grid
+                            const focusSelector = 'a, button, input, select, [tabindex]:not([tabindex="-1"])';
+                            const candidates = Array.from(aboutGrid.querySelectorAll(focusSelector)).filter(
+                                (el) => el.tabIndex !== -1 && !el.disabled && el.offsetParent !== null
+                            );
+
+                            // Check if there is another card to the left within the grid
+                            const nextInGrid = spatialNavigator.findNext(currentElement, candidates, 'left');
+                            if (nextInGrid) {
+                                focusManager.focusElement(nextInGrid);
+                                return true;
+                            }
+
+                            // If on the leftmost column, smoothly transition to the settings sidebar
+                            focusManager._leaveSection('left');
+                            return true;
+                        }
+
+                        // If not in a setting-item or about-actions-grid (fallback), just escape
                         focusManager._leaveSection('left');
                         return true;
                     }
@@ -13376,6 +14585,11 @@ class SettingsPage extends Page {
             // Check if Custom Collections modal is open
             if (overlay.querySelector('.custom-collections-modal')) {
                 this._closeCustomCollectionsModal();
+                return true;
+            }
+            // Check if About dialog modal is open
+            if (overlay.querySelector('.about-dialog-modal')) {
+                this._closeAboutDialog();
                 return true;
             }
             this._closeSelectionModal();

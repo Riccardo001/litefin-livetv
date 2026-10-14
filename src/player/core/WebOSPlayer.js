@@ -208,6 +208,20 @@ export class WebOSPlayer {
             document.body.appendChild(this.container);
         }
 
+        /*
+         * ====================================================================
+         * Container Letterbox Background Normalization
+         * ====================================================================
+         * WebOSPlayer fits the hardware-associated <video> element layout box
+         * to match the stream's exact aspect ratio in _fitVideoBox().
+         * Because document-level player-active transparency rules make the body
+         * and app wrappers transparent, the container itself must have an opaque
+         * solid black background to ensure pillarbox and letterbox borders render
+         * in deep black rather than showing through to the underlying canvas.
+         * ====================================================================
+         */
+        this.container.style.backgroundColor = '#000000';
+
         this.container.appendChild(video);
         this._videoElement = video;
 
@@ -2119,8 +2133,25 @@ export class WebOSPlayer {
      * @param {'auto'|'zoom'|'stretch'} mode
      */
     setAspectRatio(mode) {
+        const targetMode = mode || 'auto';
+
+        // --------------------------------------------------------------------
+        // Reset Aspect Ratio Before Applying Zoom
+        // --------------------------------------------------------------------
+        // If previous mode was 'stretch' (or any non-default mode), reset the
+        // layout box to 'auto' first so residual stretch styling is cleared before
+        // computing and applying the oversized zoom bounding box.
+        if (targetMode === 'zoom') {
+            log.info('WebOSPlayer: Resetting aspect ratio to auto prior to applying zoom');
+            this._aspectMode = 'auto';
+            if (this._videoElement) {
+                this._videoElement.style.objectFit = 'fill';
+                this._fitVideoBox();
+            }
+        }
+
         // Normalize aspect mode, falling back to 'auto'
-        this._aspectMode = mode || 'auto';
+        this._aspectMode = targetMode;
         if (!this._videoElement) return;
 
         log.info('WebOSPlayer: Setting aspect ratio mode:', this._aspectMode);
@@ -2166,9 +2197,11 @@ export class WebOSPlayer {
         // Container has no valid layout dimensions yet
         if (!cw || !ch) return;
 
-        // Ensure positioning context is absolute within container
+        // Ensure positioning context is absolute within container and clear residual stretch constraints
         style.position = 'absolute';
         style.margin = '0';
+        style.right = '';
+        style.bottom = '';
 
         // ====================================================================
         // Mode 1: Fullscreen Stretch
@@ -2861,6 +2894,13 @@ export class WebOSPlayer {
                 this._videoElement.parentNode.removeChild(this._videoElement);
             }
             this._videoElement = null;
+        }
+
+        // ---------------------------------------------------------------------
+        // Reset container background presentation override
+        // ---------------------------------------------------------------------
+        if (this.container) {
+            this.container.style.backgroundColor = '';
         }
     }
 }

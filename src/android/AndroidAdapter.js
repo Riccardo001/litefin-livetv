@@ -505,8 +505,10 @@ class AndroidAdapter {
      * @returns {boolean} True if viewport was portrait and handled
      */
      _applyPortraitScale() {
-        layoutManager._applyDisplayScale();
-        return document.documentElement.hasAttribute('data-litefin-portrait');
+        if (typeof layoutManager !== 'undefined' && layoutManager?._applyDisplayScale) {
+            layoutManager._applyDisplayScale();
+        }
+        return Boolean(document.documentElement?.hasAttribute?.('data-litefin-portrait'));
     }
 
     /**
@@ -518,7 +520,26 @@ class AndroidAdapter {
      * @private
      */
     _applyDisplayScale() {
-        layoutManager._applyDisplayScale();
+        if (typeof layoutManager !== 'undefined' && layoutManager?._applyDisplayScale) {
+            layoutManager._applyDisplayScale();
+        }
+    }
+
+    /**
+     * ========================================================================
+     * Deep Link Navigation Dispatcher
+     * ========================================================================
+     * Delegates deep-link navigation to AndroidLauncherManager when invoked
+     * from native activity bridges or external hooks.
+     *
+     * @param {Object} actionData - Target coordinates { id, type, seriesid?, seasonid? }
+     */
+    handleDeepLink(actionData) {
+        if (typeof window !== 'undefined' && window.androidLauncherManager?.handleDeepLink) {
+            window.androidLauncherManager.handleDeepLink(actionData);
+        } else if (typeof window !== 'undefined') {
+            window.__pendingAndroidDeepLink = actionData;
+        }
     }
 
     /**

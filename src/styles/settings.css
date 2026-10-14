@@ -261,6 +261,38 @@ html[data-layout-tier="ultra-legacy"] .settings-menu-btn .menu-icon {
     line-height: 1.4;
 }
 
+/* Audio language fallback slots — ordered list under a single group heading */
+.audio-fallback-slot .setting-label {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+/*
+ * Fallback priority index badge (1, 2, 3...)
+ * Uses the solid theme accent background paired with the dynamic contrast
+ * content variable (--jf-accent-content-color) to ensure guaranteed legibility
+ * across all light and dark theme configurations.
+ */
+.fallback-priority-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    flex-shrink: 0;
+    border-radius: var(--jf-border-radius);
+    background-color: var(--jf-accent);
+    color: var(--jf-accent-content-color, #ffffff);
+    font-size: 1.3rem;
+    font-weight: 700;
+}
+
+.fallback-slot-name {
+    display: inline-block;
+    margin-bottom: 0;
+}
+
 .setting-control {
     display: flex;
     flex-wrap: wrap;
@@ -334,7 +366,8 @@ html[data-layout-tier="ultra-legacy"] .settings-menu-btn .menu-icon {
 /* Select Buttons (Modal Triggers) */
 .select-btn,
 .theme-color-select-btn,
-.loader-style-select-btn {
+.loader-style-select-btn,
+.audio-fallback-select-btn {
     padding: 12px 24px;
     font-size: 1.1rem;
     background: var(--jf-action-btn-bg, rgba(40, 40, 40, 0.8));
@@ -364,7 +397,9 @@ html[data-layout-tier="ultra-legacy"] .settings-menu-btn .menu-icon {
 .theme-color-select-btn:focus,
 .theme-color-select-btn.focused,
 .loader-style-select-btn:focus,
-.loader-style-select-btn.focused {
+.loader-style-select-btn.focused,
+.audio-fallback-select-btn:focus,
+.audio-fallback-select-btn.focused {
     background: var(--jf-btn-primary-focus-bg) !important;
     color: var(--jf-btn-primary-focus-color) !important;
     border: 2px solid var(--jf-btn-primary-focus-border) !important;
@@ -374,13 +409,15 @@ html[data-layout-tier="ultra-legacy"] .settings-menu-btn .menu-icon {
 
 .select-btn:hover,
 .theme-color-select-btn:hover,
-.loader-style-select-btn:hover {
+.loader-style-select-btn:hover,
+.audio-fallback-select-btn:hover {
     border: 2px solid var(--jf-btn-primary-hover-border)!important;
     transform: scale(1.02);
     will-change: transform;
 }
 
-.select-btn .btn-label {
+.select-btn .btn-label,
+.audio-fallback-select-btn .btn-label {
     font-weight: 500;
 }
 
@@ -680,6 +717,474 @@ html[data-layout-tier="ultra-legacy"] .identity-grid .identity-item:nth-child(ev
     font-size: 1.25rem;
     color: var(--jf-text-primary);
     font-weight: 500;
+}
+
+/* ==========================================================================
+   About Page - Quick Action Cards Grid & Dialog Modals
+   ========================================================================== */
+
+/* Container for the 2-column interactive resource cards */
+.about-actions-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+    margin-top: 16px;
+    margin-bottom: 48px;
+}
+
+/* Fallback for legacy Tizen / webOS browsers where CSS Grid is unsupported */
+html[data-layout-tier="legacy"] .about-actions-grid,
+html[data-layout-tier="ultra-legacy"] .about-actions-grid {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+html[data-layout-tier="legacy"] .about-actions-grid .about-action-card,
+html[data-layout-tier="ultra-legacy"] .about-actions-grid .about-action-card {
+    width: calc(50% - 10px);
+    margin-right: 20px;
+    margin-bottom: 18px;
+}
+
+html[data-layout-tier="legacy"] .about-actions-grid .about-action-card:nth-child(even),
+html[data-layout-tier="ultra-legacy"] .about-actions-grid .about-action-card:nth-child(even) {
+    margin-right: 0;
+}
+
+/* Individual interactive resource action card */
+.about-action-card {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 20px 22px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1.5px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--jf-border-radius-lg, 16px);
+    cursor: pointer;
+    text-align: left;
+    position: relative;
+    overflow: hidden;
+    outline: none;
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.22s ease;
+    -webkit-transition: -webkit-transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.22s ease;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+}
+
+/* Hover and remote D-Pad focus state */
+.about-action-card:focus,
+.about-action-card.focused,
+.about-action-card:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: var(--jf-accent, #00a4dc) !important;
+    transform: scale(1.025);
+    -webkit-transform: scale(1.025);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--jf-accent, #00a4dc);
+    z-index: 2;
+}
+
+/* Icon bubble on the left of each card */
+.about-card-icon-wrap {
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--jf-accent, #00a4dc);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease, color 0.2s ease, transform 0.22s ease;
+    -webkit-transition: background-color 0.2s ease, color 0.2s ease, -webkit-transform 0.22s ease;
+}
+
+.about-action-card:focus .about-card-icon-wrap,
+.about-action-card.focused .about-card-icon-wrap,
+.about-action-card:hover .about-card-icon-wrap {
+    background: var(--jf-accent, #00a4dc);
+    color: #ffffff;
+    transform: scale(1.06);
+    -webkit-transform: scale(1.06);
+}
+
+/* Card typography structure */
+.about-card-info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+
+.about-card-title {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--jf-text-primary, #ffffff);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.about-card-desc {
+    font-size: 0.88rem;
+    color: var(--jf-text-secondary, rgba(255, 255, 255, 0.65));
+    line-height: 1.35;
+    white-space: normal;
+}
+
+/* Chevron indicator on the card right edge */
+.about-card-chevron {
+    flex-shrink: 0;
+    color: var(--jf-text-tertiary, rgba(255, 255, 255, 0.4));
+    transition: transform 0.2s ease, color 0.2s ease;
+    -webkit-transition: -webkit-transform 0.2s ease, color 0.2s ease;
+}
+
+.about-action-card:focus .about-card-chevron,
+.about-action-card.focused .about-card-chevron,
+.about-action-card:hover .about-card-chevron {
+    color: var(--jf-text-primary, #ffffff);
+    transform: translateX(4px);
+    -webkit-transform: translateX(4px);
+}
+
+/* ==========================================================================
+   About Dialog Modals - Modal Styling, QR Codes & Hardware Identity
+   ========================================================================== */
+
+/* Enhanced modal container for QR codes and detailed device specifications */
+.settings-modal.about-dialog-modal {
+    width: 840px;
+    max-width: 92vw;
+    max-height: 85vh;
+    border-radius: 20px;
+    -webkit-border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(22, 22, 26, 0.96);
+    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(28px);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Compact variant for single-QR dialogs */
+.settings-modal.about-dialog-modal.compact-modal {
+    width: 540px;
+}
+
+/* Dialog header with subtitle */
+.about-dialog-header {
+    padding: 24px 30px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.about-dialog-header h2 {
+    font-size: 1.45rem;
+    font-weight: 700;
+    color: var(--jf-text-primary, #ffffff);
+    margin: 0 0 6px 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.about-dialog-subtitle {
+    font-size: 0.92rem;
+    color: var(--jf-text-secondary, rgba(255, 255, 255, 0.65));
+    line-height: 1.4;
+    margin: 0;
+}
+
+/* Dialog content container */
+.about-dialog-content {
+    padding: 24px 30px;
+    overflow-y: auto;
+    flex: 1 1 auto;
+}
+
+/* Horizontal grid for 1 or 2 QR code cards */
+.about-qr-grid {
+    display: flex;
+    justify-content: center;
+    align-items: stretch;
+    gap: 24px;
+    width: 100%;
+}
+
+/* Single QR card wrapper */
+.about-qr-card {
+    flex: 1;
+    min-width: 240px;
+    max-width: 360px;
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* High-contrast solid white plate ensuring QR readability */
+.about-qr-image-wrap {
+    background: #ffffff;
+    padding: 12px;
+    border-radius: 14px;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 16px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+/* QR code PNG image */
+.about-qr-img {
+    width: 170px;
+    height: 170px;
+    display: block;
+    object-fit: contain;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+}
+
+/* Single QR dialog displays a larger QR image */
+.compact-modal .about-qr-img {
+    width: 190px;
+    height: 190px;
+}
+
+/* Card titles and descriptions */
+.about-qr-title {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--jf-text-primary, #ffffff);
+    margin-bottom: 6px;
+}
+
+.about-qr-desc {
+    font-size: 0.86rem;
+    color: var(--jf-text-secondary, rgba(255, 255, 255, 0.65));
+    line-height: 1.35;
+    margin-bottom: 12px;
+}
+
+/* Monospace chip for displayed URL */
+.about-qr-url-chip {
+    font-family: monospace;
+    font-size: 0.78rem;
+    color: var(--jf-text-tertiary, rgba(255, 255, 255, 0.7));
+    background: rgba(255, 255, 255, 0.06);
+    padding: 5px 10px;
+    border-radius: 6px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 14px;
+}
+
+/* Action button inside QR card */
+.about-qr-btn {
+    /* Push button to card base */
+    margin-top: auto;
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+    margin-bottom: 0;
+    padding: 10px 18px !important;
+    font-size: 0.95rem !important;
+    border-radius: 10px !important;
+    min-width: 0 !important;
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    -webkit-transition: -webkit-transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Focused state for QR card action buttons */
+.about-qr-btn:focus,
+.about-qr-btn.focused,
+.about-qr-btn:hover {
+    /* Glowing focus indicator */
+    background: var(--jf-accent, #00a4dc) !important;
+    color: #ffffff !important;
+    border-color: #ffffff !important;
+    transform: scale(1.03) !important;
+    -webkit-transform: scale(1.03) !important;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25), 0 0 16px var(--jf-accent, #00a4dc) !important;
+    outline: none !important;
+}
+
+/* Device Specifications modal grid layout */
+.about-device-specs-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+}
+
+/* Legacy fallback for device specs grid */
+html[data-layout-tier="legacy"] .about-device-specs-grid,
+html[data-layout-tier="ultra-legacy"] .about-device-specs-grid {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+html[data-layout-tier="legacy"] .about-device-specs-grid .about-device-tile,
+html[data-layout-tier="ultra-legacy"] .about-device-specs-grid .about-device-tile {
+    width: calc(50% - 10px);
+    margin-right: 20px;
+    margin-bottom: 16px;
+}
+
+html[data-layout-tier="legacy"] .about-device-specs-grid .about-device-tile:nth-child(even),
+html[data-layout-tier="ultra-legacy"] .about-device-specs-grid .about-device-tile:nth-child(even) {
+    margin-right: 0;
+}
+
+/* Individual spec tile */
+.about-device-tile {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+}
+
+.about-device-tile.span-2 {
+    grid-column: span 2;
+    width: 100% !important;
+    margin-right: 0 !important;
+}
+
+.about-device-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--jf-text-tertiary, rgba(255, 255, 255, 0.45));
+    margin-bottom: 6px;
+}
+
+.about-device-val {
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: var(--jf-text-primary, #ffffff);
+    line-height: 1.4;
+}
+
+/* Pill badge cloud for media codecs */
+.about-badge-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.about-codec-badge {
+    display: inline-block;
+    padding: 4px 9px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.about-codec-badge.supported {
+    background: rgba(52, 199, 89, 0.15);
+    color: #4cd964;
+    border-color: rgba(52, 199, 89, 0.3);
+}
+
+.about-codec-badge.unsupported {
+    background: rgba(255, 59, 48, 0.12);
+    color: rgba(255, 255, 255, 0.4);
+    border-color: rgba(255, 59, 48, 0.2);
+}
+
+.about-codec-badge.disabled {
+    background: rgba(255, 149, 0, 0.15);
+    color: #ff9500;
+    border-color: rgba(255, 149, 0, 0.3);
+}
+
+/* Modal action footer */
+.about-dialog-actions {
+    /* Anchored bottom bar */
+    padding: 16px 30px 22px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    justify-content: flex-end;
+    gap: 14px;
+    background: rgba(255, 255, 255, 0.015);
+}
+
+/* Compact dismiss button positioned in dialog action bar */
+.about-dialog-close-btn {
+    /* Proportionate padding for balanced footer layout */
+    padding: 8px 24px !important;
+    font-size: 0.95rem !important;
+    font-weight: 600 !important;
+    border-radius: 10px !important;
+    min-width: 90px !important;
+    margin: 0 !important;
+    /* Frosted glass idle appearance */
+    background: rgba(255, 255, 255, 0.08) !important;
+    border: 1.5px solid rgba(255, 255, 255, 0.16) !important;
+    color: var(--jf-text-primary, #ffffff) !important;
+    cursor: pointer !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    /* Smooth transition for focus entry and exit */
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+    -webkit-transition: -webkit-transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+}
+
+/* Focused and hover state for modal dismiss button */
+.about-dialog-close-btn:focus,
+.about-dialog-close-btn.focused,
+.about-dialog-close-btn:hover {
+    /* High contrast luminous accent background */
+    background: var(--jf-accent, #00a4dc) !important;
+    color: #ffffff !important;
+    border-color: #ffffff !important;
+    /* Dynamic spring scale on focus */
+    transform: scale(1.05) !important;
+    -webkit-transform: scale(1.05) !important;
+    /* Double-ring glow halo for distant viewing */
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.28), 0 0 18px var(--jf-accent, #00a4dc), 0 4px 14px rgba(0, 0, 0, 0.5) !important;
+    outline: none !important;
+    z-index: 5 !important;
+}
+
+/* Responsive adjustments for mobile and narrow viewports */
+@media (max-width: 768px) {
+    .about-actions-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .about-qr-grid {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .about-qr-card {
+        width: 100%;
+        max-width: 100%;
+    }
+    
+    .about-device-specs-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .about-device-tile.span-2 {
+        grid-column: span 1;
+    }
 }
 
 /* Toggle Switch */

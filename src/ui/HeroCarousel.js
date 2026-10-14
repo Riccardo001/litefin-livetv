@@ -635,7 +635,20 @@ class HeroCarousel {
                                 this._stopAutoScroll();
                             } else if (!this._timer && !this._isFocused) {
                                 log.debug('Hero carousel visible; resuming timer');
-                                this._startAutoScroll();
+                                // Guard against triggering indicator progress animations or timer restarts mid-scroll
+                                if (window.__scrollController && window.__scrollController.isAnimating) {
+                                    if (!this._observerScrollFinishHandler) {
+                                        this._observerScrollFinishHandler = () => {
+                                            this._observerScrollFinishHandler = null;
+                                            if (this._isVisible && !this._timer && !this._isFocused) {
+                                                this._startAutoScroll();
+                                            }
+                                        };
+                                        eventBus.once('scroll:finished', this._observerScrollFinishHandler);
+                                    }
+                                } else {
+                                    this._startAutoScroll();
+                                }
                             }
                         }
                     }
@@ -701,6 +714,14 @@ class HeroCarousel {
         if (this._intersectionObserver) {
             this._intersectionObserver.disconnect();
             this._intersectionObserver = null;
+        }
+        if (this._observerScrollFinishHandler) {
+            eventBus.off('scroll:finished', this._observerScrollFinishHandler);
+            this._observerScrollFinishHandler = null;
+        }
+        if (this._scrollFinishHandler) {
+            eventBus.off('scroll:finished', this._scrollFinishHandler);
+            this._scrollFinishHandler = null;
         }
         if (this._onFocusChanged) {
             eventBus.off('focus:changed', this._onFocusChanged);
@@ -1000,8 +1021,28 @@ class HeroCarousel {
     _handleFocus() {
         this._isFocused = true;
         this._container.classList.add('focused');
-        // Restart the timer AND resync the progress dot animation
-        this._startAutoScroll();
+
+        // Clean up any pending deferred scroll listener
+        if (this._scrollFinishHandler) {
+            eventBus.off('scroll:finished', this._scrollFinishHandler);
+            this._scrollFinishHandler = null;
+        }
+
+        // If an active vertical scroll animation is in flight (e.g. smooth scrolling from
+        // the first content row up to the hero carousel), defer starting the auto-scroll timer
+        // and restarting progress dot animations until the camera lands cleanly.
+        if (window.__scrollController && window.__scrollController.isAnimating) {
+            this._scrollFinishHandler = () => {
+                this._scrollFinishHandler = null;
+                if (this._isFocused && this._isVisible) {
+                    this._startAutoScroll();
+                }
+            };
+            eventBus.once('scroll:finished', this._scrollFinishHandler);
+        } else {
+            // Restart the timer AND resync the progress dot animation immediately if stationary
+            this._startAutoScroll();
+        }
     }
 
     /**
@@ -1017,6 +1058,13 @@ class HeroCarousel {
     _handleBlur() {
         this._isFocused = false;
         this._container.classList.remove('focused');
+
+        // Cancel any pending deferred start from a scroll that was in flight
+        if (this._scrollFinishHandler) {
+            eventBus.off('scroll:finished', this._scrollFinishHandler);
+            this._scrollFinishHandler = null;
+        }
+
         // Pause the timer — don't advance slides while user is elsewhere
         this._stopAutoScroll();
     }

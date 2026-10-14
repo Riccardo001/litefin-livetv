@@ -731,11 +731,12 @@ class CardRenderer {
                     });
                 }
             } else if (item.Type === 'Episode' && item.SeriesId) {
-                // Episode as Poster: Use Series Title/Poster usually, but if requested as poster
+                // Episode as Poster: Resolve parent series primary poster artwork
                 const params = imageService.getParams('poster', contextType);
                 imageUrl = _imgUrl(item.SeriesId, 'Primary', {
                     maxWidth: params.maxWidth,
-                    quality: params.quality
+                    quality: params.quality,
+                    ...(item.SeriesPrimaryImageTag ? { tag: item.SeriesPrimaryImageTag } : {})
                 });
             } else if (
                 type === 'small-poster' ||
@@ -892,8 +893,15 @@ class CardRenderer {
 
         // -------------------------------------------------------------
         // Check item type and build appropriate badge markup if allowed.
+        // For recently added cards, episode identifiers are rendered in the subtitle line,
+        // so we suppress the badge overlay to maintain a clean card presentation.
         // -------------------------------------------------------------
-        if (item.Type === 'Episode' && item.IndexNumber !== undefined && useEpisodeBadges) {
+        if (
+            item.Type === 'Episode' &&
+            item.IndexNumber !== undefined &&
+            useEpisodeBadges &&
+            contextType !== 'latest'
+        ) {
             const s = (item.ParentIndexNumber || 0).toString().padStart(2, '0');
             const e = (item.IndexNumber || 0).toString().padStart(2, '0');
             episodeBadgeHtml = `<div class="episode-badge">S${s}E${e}</div>`;
@@ -953,7 +961,27 @@ class CardRenderer {
             const episodeCode = `S${s}E${e}`;
             const swapEpisodeTitles = storage.getItem('pref:swapEpisodeTitles') === 'true';
 
-            if (swapEpisodeTitles) {
+            // Check if this episode is rendered within a "Recently Added" context.
+            // Following standard representation, display the parent series name
+            // as primary title and episode code/name as the secondary subtitle.
+            if (contextType === 'latest') {
+                titleText = i18n.ensureBiDi(item.SeriesName || item.Name);
+                if (item.ParentIndexNumber === 0) {
+                    subtitleText = i18n.ensureBiDi(
+                        item.Name
+                            ? `${i18n.t('Specials') || 'Special'} - ${item.Name}`
+                            : i18n.t('Specials') || 'Special'
+                    );
+                } else if (item.IndexNumber != null && item.ParentIndexNumber != null) {
+                    let epDisplay = `S${item.ParentIndexNumber}:E${item.IndexNumber}`;
+                    if (item.IndexNumberEnd) {
+                        epDisplay += `-${item.IndexNumberEnd}`;
+                    }
+                    subtitleText = i18n.ensureBiDi(item.Name ? `${epDisplay} - ${item.Name}` : epDisplay);
+                } else {
+                    subtitleText = i18n.ensureBiDi(item.Name || '');
+                }
+            } else if (swapEpisodeTitles) {
                 if (contextType === 'season-grid') {
                     titleText = i18n.ensureBiDi(`${e} - ${item.Name}`);
                     subtitleText = '';
@@ -1039,8 +1067,44 @@ class CardRenderer {
                 if (artist) parts.push(artist);
                 else if (item.ProductionYear) parts.push(item.ProductionYear);
             } else {
-                // Movies/Shows/Others - skip year here in List View as it's handled in metaParts
-                if (item.ProductionYear && !options.showMeta) parts.push(item.ProductionYear);
+                // Series or Movie presentation
+                if (!options.showMeta) {
+                    if (item.Type === 'Series') {
+                        // Series year formatting matching standard representation:
+                        // - Continuing series: e.g. "2026 - Present"
+                        // - Ended series: e.g. "2016 - 2021" (or single year if start === end)
+                        // - Standard year fallback: e.g. "2026"
+                        const prodYear = item.ProductionYear;
+                        if (item.Status === 'Continuing') {
+                            // Fetch localized template string with production year interpolated
+                            const trans = i18n.t('SeriesYearToPresent', [prodYear || '']);
+
+                            // Fallback safely to English default if i18n dictionary is not yet hydrated
+                            const presentText =
+                                trans && trans !== 'SeriesYearToPresent'
+                                    ? trans
+                                    : prodYear
+                                      ? `${prodYear} - Present`
+                                      : 'Present';
+                            parts.push(presentText);
+                        } else if (item.EndDate && prodYear) {
+                            try {
+                                const endYear = new Date(item.EndDate).getFullYear();
+                                if (endYear && !isNaN(endYear) && endYear !== prodYear) {
+                                    parts.push(`${prodYear} - ${endYear}`);
+                                } else {
+                                    parts.push(prodYear);
+                                }
+                            } catch {
+                                parts.push(prodYear);
+                            }
+                        } else if (prodYear) {
+                            parts.push(prodYear);
+                        }
+                    } else if (item.ProductionYear) {
+                        parts.push(item.ProductionYear);
+                    }
+                }
 
                 // Support both standard Role and _roleName (from MediaGrid mapping)
                 const role = item.Role || item._roleName;
