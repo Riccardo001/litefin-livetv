@@ -722,6 +722,19 @@
     background: transparent;
 }
 
+/* <video> engine (webOS, desktop): black bars around a letterboxed picture.
+   The AVPlay engine keeps the container transparent (hardware plane below). */
+.dtv-player-page .player-container.dtv-video-host {
+    background: #000;
+}
+
+/* Box sized and centred by LiveVideoEngine to the picture's aspect ratio */
+.dtv-player-page .dtv-video {
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
 .dtv-zap {
     position: absolute;
     left: 0;

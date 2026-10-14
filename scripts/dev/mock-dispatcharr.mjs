@@ -10,6 +10,7 @@
  * Usage:
  *   npm run mock:dispatcharr            # http://localhost:9191, API key "dev-key"
  *   MOCK_PORT=9292 MOCK_API_KEY=abc node scripts/dev/mock-dispatcharr.mjs
+ *   MOCK_MAX_STREAMS=1 npm run mock:dispatcharr   # IPTV account with one connection
  *
  * In Litefin: Settings > Live TV (IPTV) > address http://localhost:9191, key dev-key.
  *
@@ -21,6 +22,12 @@
  *   GET /api/epg/grid/?start=&end=        (ApiKey auth, {"data": [...]})
  *   GET /api/channels/logos/<id>/cache/   (public, SVG)
  *   GET /proxy/ts/stream/<uuid>           (public, MPEG-TS or ?output_format=fmp4)
+ *
+ * Provider connection limit (MOCK_MAX_STREAMS, default unlimited): like
+ * Dispatcharr with an M3U account limited to N streams, a stream request
+ * waits up to 3 s for a free slot, then answers 503. A slot is released
+ * MOCK_RELEASE_MS (default 800) after the client disconnects. Two client
+ * connections open at the same time are logged as "OVERLAP".
  *
  * Special channels to exercise error handling:
  *   "Slow Start"  - waits 6 s before sending the first byte
@@ -40,6 +47,10 @@ const HOUR = 60 * 60 * 1000;
 const MINUTE = 60 * 1000;
 
 const HAS_FFMPEG = spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status === 0;
+
+const MAX_STREAMS = Number(process.env.MOCK_MAX_STREAMS) || 0;
+const RELEASE_MS = process.env.MOCK_RELEASE_MS !== undefined ? Number(process.env.MOCK_RELEASE_MS) : 800;
+const SLOT_WAIT_MS = 3000;
 
 // ============================================================================
 // Fixture Data
@@ -273,7 +284,72 @@ function logoSvg(channel) {
 
 const busyToggle = new Map();
 
-function streamChannel(req, res, channel, format) {
+// ============================================================================
+// Provider Slots
+// ============================================================================
+
+let slotsInUse = 0;
+let openClients = 0;
+
+/**
+ * Reserve a provider slot like Dispatcharr does for a limited M3U account:
+ * wait up to SLOT_WAIT_MS for one to free up, then give up.
+ * @returns {Promise<boolean>}
+ */
+async function acquireSlot(req, channel) {
+    if (!MAX_STREAMS) return true;
+    const start = Date.now();
+    let warned = false;
+    while (slotsInUse >= MAX_STREAMS) {
+        if (req.socket.destroyed) return false;
+        if (Date.now() - start >= SLOT_WAIT_MS) {
+            log(`REJECTED ${channel.name}: no free provider slot after ${SLOT_WAIT_MS} ms (${slotsInUse}/${MAX_STREAMS})`);
+            return false;
+        }
+        if (!warned) {
+            log(`waiting for a provider slot for ${channel.name} (${slotsInUse}/${MAX_STREAMS} in use)`);
+            warned = true;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    slotsInUse++;
+    log(`slot taken by ${channel.name} (${slotsInUse}/${MAX_STREAMS})`);
+    return true;
+}
+
+function releaseSlot(channel) {
+    if (!MAX_STREAMS) return;
+    setTimeout(() => {
+        slotsInUse--;
+        log(`slot released by ${channel.name} (${slotsInUse}/${MAX_STREAMS})`);
+    }, RELEASE_MS);
+}
+
+async function streamChannel(req, res, channel, format) {
+    openClients++;
+    if (openClients > 1) log(`OVERLAP: ${openClients} client connections open (new: ${channel.name})`);
+    let closed = false;
+    req.on('close', () => {
+        closed = true;
+        openClients--;
+        log(`client disconnected from ${channel.name}`);
+    });
+
+    if (channel._special !== 'Busy 503') {
+        if (!(await acquireSlot(req, channel))) {
+            if (!closed) sendJson(res, 503, { error: 'No streams available, retry shortly' }, { 'Retry-After': '1' });
+            return;
+        }
+        if (closed) {
+            releaseSlot(channel);
+            return;
+        }
+        req.on('close', () => releaseSlot(channel));
+    }
+    serveStream(req, res, channel, format);
+}
+
+function serveStream(req, res, channel, format) {
     const special = channel._special;
 
     if (special === 'Busy 503') {
@@ -499,4 +575,5 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
     log(`listening on http://localhost:${PORT}  (API key: ${API_KEY})`);
     log(`${CHANNELS.length} channels, ${GROUPS.length} groups, ffmpeg ${HAS_FFMPEG ? 'available' : 'MISSING (streams disabled)'}`);
+    if (MAX_STREAMS) log(`provider limited to ${MAX_STREAMS} stream(s), slot released ${RELEASE_MS} ms after disconnect`);
 });

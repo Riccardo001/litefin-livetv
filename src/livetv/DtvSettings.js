@@ -20,6 +20,7 @@ export const DTV_KEYS = {
     URL: 'dispatcharr:url',
     API_KEY: 'dispatcharr:apiKey',
     STREAM_FORMAT: 'dispatcharr:streamFormat',
+    SWITCH_DELAY: 'dispatcharr:switchDelay',
     FAVORITES: 'dispatcharr:favorites',
     LAST_CHANNEL: 'dispatcharr:lastChannel',
     PREVIOUS_CHANNEL: 'dispatcharr:previousChannel',
@@ -30,6 +31,10 @@ export const DTV_KEYS = {
 
 /** Stream format setting values ('auto' resolves per platform). */
 export const STREAM_FORMAT_AUTO = 'auto';
+
+/** Allowed pauses (ms) between closing a channel and opening the next one. */
+export const SWITCH_DELAY_OPTIONS = [500, 1000, 2000, 3000];
+export const DEFAULT_SWITCH_DELAY = 1000;
 
 /** Event emitted when the connection settings change. */
 export const DTV_SETTINGS_CHANGED = 'dtv:settingsChanged';
@@ -78,6 +83,16 @@ export function getStreamFormat() {
     const setting = getStreamFormatSetting();
     if (setting !== STREAM_FORMAT_AUTO) return setting;
     return platformInfo.isTizen || platformInfo.isWebOS ? STREAM_FORMAT_TS : STREAM_FORMAT_FMP4;
+}
+
+/**
+ * Pause between closing a channel and opening the next one, so Dispatcharr
+ * can free the provider slot (IPTV accounts limited to one connection).
+ * @returns {number} Milliseconds
+ */
+export function getSwitchDelay() {
+    const value = parseInt(storage.getItem(DTV_KEYS.SWITCH_DELAY), 10);
+    return SWITCH_DELAY_OPTIONS.indexOf(value) !== -1 ? value : DEFAULT_SWITCH_DELAY;
 }
 
 /**

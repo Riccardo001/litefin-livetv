@@ -40,7 +40,13 @@ import { escapeHtml } from '../utils/Utils.js';
 import { watchProviderRegion, watchProviderRegionName } from '../utils/WatchProviders.js';
 import CardRenderer from '../utils/CardRenderer.js';
 import { dispatcharrClient } from '../api/DispatcharrClient.js';
-import { DTV_KEYS, DTV_SETTINGS_CHANGED, getStreamFormatSetting } from '../livetv/DtvSettings.js';
+import {
+    DTV_KEYS,
+    DTV_SETTINGS_CHANGED,
+    SWITCH_DELAY_OPTIONS,
+    getStreamFormatSetting,
+    getSwitchDelay
+} from '../livetv/DtvSettings.js';
 import { normalizeBaseUrl } from '../livetv/DtvModel.js';
 import { errorMessage as dtvErrorMessage } from '../components/dtv/DtvTemplates.js';
 
@@ -422,6 +428,17 @@ class SettingsPage extends Page {
             { value: 'ts', label: i18n.t('DtvFormatTs') },
             { value: 'fmp4', label: i18n.t('DtvFormatFmp4') }
         ];
+        const formatSeconds = (ms) => {
+            try {
+                return (ms / 1000).toLocaleString(String(i18n.currentLang).replace('_', '-'));
+            } catch (e) {
+                return String(ms / 1000);
+            }
+        };
+        const switchDelayOptions = SWITCH_DELAY_OPTIONS.map((ms) => ({
+            value: String(ms),
+            label: i18n.t('DtvSwitchDelaySeconds', [formatSeconds(ms)])
+        }));
         const inputStyle = `
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -483,6 +500,16 @@ class SettingsPage extends Page {
                     </div>
                     <div class="setting-control">
                         ${this._renderDropdown('dtv-stream-format-select', formatOptions, getStreamFormatSetting())}
+                    </div>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">
+                        <span class="setting-name">${i18n.t('DtvSettingsSwitchDelay')}</span>
+                        <span class="setting-description">${i18n.t('DtvSettingsSwitchDelayDesc')}</span>
+                    </div>
+                    <div class="setting-control">
+                        ${this._renderDropdown('dtv-switch-delay-select', switchDelayOptions, String(getSwitchDelay()))}
                     </div>
                 </div>
             </div>
@@ -11729,7 +11756,8 @@ class SettingsPage extends Page {
             'trending-movies-collection-select': { key: 'pref:trendingMoviesCollection', type: 'local', triggerEvent: true },
             'trending-series-collection-select': { key: 'pref:trendingSeriesCollection', type: 'local', triggerEvent: true },
             'default-livetv-tab-select': { key: 'pref:defaultLiveTvTab', type: 'local' },
-            'dtv-stream-format-select': { key: 'dispatcharr:streamFormat', type: 'local', triggerEvent: true }
+            'dtv-stream-format-select': { key: 'dispatcharr:streamFormat', type: 'local', triggerEvent: true },
+            'dtv-switch-delay-select': { key: 'dispatcharr:switchDelay', type: 'local' }
         };
 
         this.$$('.select-btn').forEach((btn) => {

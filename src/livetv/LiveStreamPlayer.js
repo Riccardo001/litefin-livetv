@@ -2,47 +2,27 @@
  * ============================================================================
  * Litefin Tizen - Live Stream Player
  * ============================================================================
- * Thin wrapper that drives Litefin's existing playback engines directly for
- * Dispatcharr live channels (plain progressive MPEG-TS / fMP4 URLs):
- *   - Tizen  → TizenAVPlayer (AVPlay demuxes raw HTTP TS natively)
- *   - webOS  → WebOSPlayer   (native media pipeline)
- *   - others → HtmlVideoPlayer (desktop browser, used with fMP4 output)
+ * Drives a live-only engine (LiveAvPlayEngine / LiveVideoEngine) for
+ * Dispatcharr channels and guarantees that the TV never holds more than
+ * one stream connection:
  *
- * JellyfinPlayer is deliberately bypassed: its recovery paths re-request
- * Jellyfin PlaybackInfo, which does not exist for these streams.
+ *   - Every start, switch, retry and stop runs through one serial queue.
+ *   - A stream is opened only after the previous one has been closed AND
+ *     `switchDelay` ms have passed since, so Dispatcharr can stop the old
+ *     channel and free the provider slot (IPTV accounts are often limited
+ *     to one connection; Dispatcharr only frees it when it sees the
+ *     disconnect, and a new request waits just ~3 s for a free slot).
+ *   - Requests superseded while waiting (fast zapping, Back) never open.
  *
- * Responsibilities handled here because the engines do not:
- *  - Session tokens, so late events from a previous channel are ignored.
- *  - Always stopping the previous stream before opening the next one
- *    (Dispatcharr may only have one provider slot free).
- *  - A startup watchdog (webOS/HTML5 engines have none).
- *  - Retries: a 503 "slot busy / channel stopping" during fast zapping
- *    surfaces as a startup error; a stream that drops mid-playback is
- *    reconnected to the SAME channel (never auto-advanced).
+ * Failures are bounded: a channel that does not start is retried a few
+ * times with growing pauses (covers "slot still busy"), a stream that drops
+ * mid-playback is reconnected to the SAME channel (never auto-advanced),
+ * then the player stops and reports ERROR. Nothing retries after that
+ * until the user asks.
+ *
+ * No platform or logger imports, so the logic runs under `node --test`.
  * ============================================================================
  */
-
-import { logger } from '../utils/Logger.js';
-import { platformInfo } from '../utils/PlatformInfo.js';
-import { PlayerSettings } from '../utils/PlayerSettings.js';
-import { TizenAVPlayer } from '../player/core/TizenAVPlayer.js';
-import { WebOSPlayer } from '../player/core/WebOSPlayer.js';
-import { HtmlVideoPlayer } from '../player/core/HtmlVideoPlayer.js';
-
-const log = logger.create('LiveStreamPlayer');
-
-/** Max wait for the first frame before declaring the start failed. */
-const START_TIMEOUT = 15000;
-/** Startup failures retried automatically (covers 503 while a slot frees up). */
-const START_RETRIES = 2;
-const START_RETRY_DELAY = 1000;
-/** Mid-stream drops reconnected automatically (backoff doubles each time). */
-const RECONNECT_RETRIES = 3;
-const RECONNECT_BASE_DELAY = 1000;
-/** Playback with no time progress for this long is treated as a drop. */
-const STALL_TIMEOUT = 12000;
-/** Healthy playback for this long resets the reconnect budget. */
-const HEALTHY_RESET = 60000;
 
 /** States reported through `onState`. */
 export const LIVE_STATE = {
@@ -54,37 +34,83 @@ export const LIVE_STATE = {
     ERROR: 'error'
 };
 
+/** Default timings (ms). */
+export const LIVE_TIMING = {
+    /** Pause between closing a stream and opening the next one. */
+    switchDelay: 1000,
+    /** Max wait for the first picture. */
+    startTimeout: 15000,
+    /** Playback with no time progress for this long counts as a drop. */
+    stallTimeout: 15000,
+    stallCheckInterval: 2000,
+    /** Max wait for an engine to confirm close() before moving on. */
+    closeTimeout: 3000,
+    /** Pauses before each automatic retry of a channel that does not start. */
+    startRetryDelays: [1500, 3000, 5000],
+    /** Pauses before each automatic reconnect after a mid-playback drop. */
+    reconnectDelays: [2000, 4000, 8000],
+    /** Healthy playback for this long restores the reconnect budget. */
+    healthyReset: 60000
+};
+
+const NOOP_LOG = { debug() {}, info() {}, warn() {}, error() {} };
+
 export class LiveStreamPlayer {
     /**
      * @param {Object} options
-     * @param {HTMLElement} options.container - Full-screen element hosting the video
+     * @param {function(): Object} options.createEngine - Returns the playback engine (called once, lazily)
      * @param {function(string, Object=): void} options.onState - (state, detail) callback
+     * @param {Object} [options.log] - Logger ({debug, info, warn, error})
+     * @param {Object} [options.timing] - Overrides for LIVE_TIMING
+     * @param {Function} [options.setTimeout] - Timer injection for tests
+     * @param {Function} [options.clearTimeout] - Timer injection for tests
+     * @param {Function} [options.now] - Clock injection for tests
      */
     constructor(options) {
-        this._container = options.container;
+        this._createEngine = options.createEngine;
         this._onState = options.onState || (() => {});
-        this._backend = null;
-        this._backendType = null;
-        this._session = 0;
+        this._log = options.log || NOOP_LOG;
+        this._timing = Object.assign({}, LIVE_TIMING, options.timing || {});
+        this._setTimeout = options.setTimeout || ((fn, ms) => setTimeout(fn, ms));
+        this._clearTimeout = options.clearTimeout || ((id) => clearTimeout(id));
+        this._now = options.now || (() => Date.now());
+
+        this._engine = null;
+        this._isOpen = false;
+        this._closedAt = null;
+        this._queue = Promise.resolve();
+        // Bumped by every request: queued work of an older request is skipped
+        this._gen = 0;
+        // Bumped by every open/close: engine events of an older stream are ignored
+        this._attempt = 0;
+        this._wake = null;
+        this._watchTimers = [];
+
         this._channel = null;
         this._state = LIVE_STATE.IDLE;
-        this._timers = [];
-        this._startAttempts = 0;
+        this._startFailures = 0;
         this._reconnects = 0;
+        // First picture seen for the current attempt / for the current channel
         this._hasPlayed = false;
-        this._lastProgressAt = 0;
+        this._everPlayed = false;
         this._lastTime = -1;
+        this._lastProgressAt = 0;
         this._destroyed = false;
     }
 
-    /** Backend type in use ('tizen', 'webos', 'html5') or null. */
-    get backendType() {
-        return this._backendType;
+    /** Engine type in use ('avplay', 'html5') or null before the first start. */
+    get engineType() {
+        return this._engine ? this._engine.type : null;
     }
 
     /** Channel currently playing or starting. */
     get channel() {
         return this._channel;
+    }
+
+    /** True while a stream connection is open. */
+    get isOpen() {
+        return this._isOpen;
     }
 
     // ========================================================================
@@ -94,14 +120,15 @@ export class LiveStreamPlayer {
     /**
      * Start (or switch to) a channel.
      * @param {Object} channel - Store channel ({uuid, name, streamUrl})
-     * @returns {Promise<void>}
+     * @returns {Promise<void>} Resolves when the request has been processed
      */
-    async play(channel) {
-        if (this._destroyed || !channel) return;
+    play(channel) {
+        if (this._destroyed || !channel) return Promise.resolve();
         this._channel = channel;
-        this._startAttempts = 0;
+        this._startFailures = 0;
         this._reconnects = 0;
-        await this._start(LIVE_STATE.CONNECTING);
+        this._everPlayed = false;
+        return this._request(LIVE_STATE.CONNECTING, 0, 0);
     }
 
     /**
@@ -109,151 +136,167 @@ export class LiveStreamPlayer {
      * @returns {Promise<void>}
      */
     retry() {
-        if (!this._channel) return Promise.resolve();
-        return this.play(this._channel);
+        return this._channel ? this.play(this._channel) : Promise.resolve();
     }
 
     /**
-     * Stop playback and release the decoder/network connection.
-     * @returns {Promise<void>}
+     * Stop playback and release the connection.
+     * @returns {Promise<void>} Resolves once the stream is closed
      */
-    async stop() {
-        this._session++;
-        this._clearTimers();
-        await this._stopBackend();
+    stop() {
+        this._bump();
+        this._clearWatch();
         this._setState(LIVE_STATE.IDLE);
+        return this._enqueue(() => this._closeEngine());
     }
 
     /**
      * Stop and dispose the engine. The instance cannot be reused.
      * @returns {Promise<void>}
      */
-    async destroy() {
-        if (this._destroyed) return;
+    destroy() {
+        if (this._destroyed) return this._queue;
         this._destroyed = true;
-        await this.stop();
-        if (this._backend) {
-            try {
-                // TizenAVPlayer.destroy() does not clear its own timers: always stop() first
-                this._backend.destroy();
-            } catch (e) {
-                log.warn('Backend destroy failed:', e && e.message);
+        return this.stop().then(() => {
+            if (this._engine) {
+                try {
+                    this._engine.destroy();
+                } catch (e) {
+                    this._log.warn('Engine destroy failed:', e && e.message);
+                }
+                this._engine = null;
             }
-            this._backend = null;
-        }
+        });
     }
 
     // ========================================================================
-    // Session Lifecycle
+    // Serial Queue
     // ========================================================================
 
-    async _start(state) {
-        const session = ++this._session;
-        this._clearTimers();
+    /**
+     * Close whatever is open, wait for the slot to be released, then open
+     * the current channel - unless a newer request arrived meanwhile.
+     */
+    _request(state, minDelay, attemptNumber) {
+        const gen = this._bump();
+        this._clearWatch();
         this._hasPlayed = false;
-        this._lastTime = -1;
-        this._setState(state, { channel: this._channel, attempt: this._startAttempts });
+        this._setState(state, { channel: this._channel, attempt: attemptNumber });
 
-        // Release the previous stream first: Dispatcharr may have a single
-        // provider slot, and AVPlay is a process-wide singleton.
-        await this._stopBackend();
-        if (session !== this._session || this._destroyed) return;
+        return this._enqueue(async () => {
+            await this._closeEngine();
+            if (gen !== this._gen) return;
 
-        this._ensureBackend(session);
-        this._addTimer(() => this._handleFailure(session, 'timeout', 'Start timeout'), START_TIMEOUT);
+            const sinceClose = this._closedAt !== null ? this._now() - this._closedAt : Infinity;
+            const wait = Math.max(minDelay, this._timing.switchDelay - sinceClose);
+            if (wait > 0) {
+                this._log.debug(`Waiting ${wait} ms before opening ${this._channel.name}`);
+                await this._sleep(wait);
+                if (gen !== this._gen) return;
+            }
+            this._open();
+        });
+    }
 
+    _enqueue(task) {
+        const run = this._queue.then(task).catch((err) => {
+            this._log.error('Live player step failed:', err && err.message ? err.message : err);
+        });
+        this._queue = run;
+        return run;
+    }
+
+    /** Invalidate queued work, silence the open stream and cut short a pending wait. */
+    _bump() {
+        this._gen++;
+        this._attempt++;
+        if (this._wake) this._wake();
+        return this._gen;
+    }
+
+    _sleep(ms) {
+        return new Promise((resolve) => {
+            let id = null;
+            const done = () => {
+                if (id !== null) this._clearTimeout(id);
+                if (this._wake === done) this._wake = null;
+                resolve();
+            };
+            this._wake = done;
+            id = this._setTimeout(done, ms);
+        });
+    }
+
+    // ========================================================================
+    // Engine Lifecycle
+    // ========================================================================
+
+    _open() {
+        if (!this._engine) this._engine = this._createEngine();
         const channel = this._channel;
-        log.info(`Starting ${channel.name} via ${this._backendType}: ${channel.streamUrl}`);
+        const attempt = ++this._attempt;
+        this._isOpen = true;
+        this._lastTime = -1;
+        this._log.info(`Opening ${channel.name} via ${this._engine.type}: ${channel.streamUrl}`);
 
         try {
-            await this._backend.play({
-                url: channel.streamUrl,
-                isHls: false,
-                playMethod: 'DirectPlay',
-                autoPlay: true,
-                item: { Id: channel.uuid, Name: channel.name, Type: 'TvChannel' },
-                /* A video stream entry enables TizenAVPlayer's buffering tuning
-                 * (initial/resume buffer + buffering timeout). Audio/subtitle
-                 * indices are omitted on purpose: a -1 subtitle index makes
-                 * AVPlay wait 2 s for track info before starting. */
-                mediaSource: { Id: channel.uuid, MediaStreams: [{ Type: 'Video' }] }
-            });
+            this._engine.open(channel.streamUrl, (event) => this._onEngineEvent(attempt, event));
         } catch (err) {
-            if (session === this._session) {
-                this._handleFailure(session, 'error', (err && err.message) || 'Playback failed');
-            }
-        }
-    }
-
-    _ensureBackend(session) {
-        if (this._backend) {
-            // Rebind events to the new session (engines keep one callback)
-            this._backend.onEvent = (event) => this._onBackendEvent(session, event);
+            this._onFailure(attempt, 'open', (err && (err.message || err.name)) || 'open failed');
             return;
         }
-
-        const options = {
-            container: this._container,
-            settings: PlayerSettings,
-            onEvent: (event) => this._onBackendEvent(session, event)
-        };
-        const preferred = PlayerSettings.get('playerBackend');
-        const hasAvPlay = !!((window.webapis && window.webapis.avplay) || (window.tizen && window.tizen.avplay));
-
-        // Respect an explicit "HTML5" engine choice made in the player settings
-        if (platformInfo.isTizen && hasAvPlay && preferred !== 'html5') {
-            this._backendType = 'tizen';
-            this._backend = new TizenAVPlayer(options);
-        } else if (platformInfo.isWebOS && preferred !== 'html5') {
-            this._backendType = 'webos';
-            this._backend = new WebOSPlayer(options);
-        } else {
-            this._backendType = 'html5';
-            this._backend = new HtmlVideoPlayer(options);
-        }
-        log.info(`Engine: ${this._backendType}`);
+        this._watch(
+            () => this._onFailure(attempt, 'timeout', `no picture after ${this._timing.startTimeout} ms`),
+            this._timing.startTimeout
+        );
     }
 
-    async _stopBackend() {
-        if (!this._backend) return;
-        // Detach first so the engine's own stop/error events are ignored
-        this._backend.onEvent = () => {};
+    async _closeEngine() {
+        if (!this._engine || !this._isOpen) return;
+        this._isOpen = false;
+        this._attempt++;
+        const startedAt = this._now();
+        let timer = null;
         try {
-            await this._backend.stop();
-        } catch (e) {
-            log.debug('Backend stop failed:', e && e.message);
+            await Promise.race([
+                this._engine.close(),
+                new Promise((resolve) => {
+                    timer = this._setTimeout(() => {
+                        this._log.warn(`Engine close not confirmed after ${this._timing.closeTimeout} ms`);
+                        resolve();
+                    }, this._timing.closeTimeout);
+                })
+            ]);
+        } catch (err) {
+            this._log.warn('Engine close failed:', err && err.message);
         }
+        if (timer !== null) this._clearTimeout(timer);
+        this._closedAt = this._now();
+        this._log.info(`Stream closed (${this._closedAt - startedAt} ms)`);
     }
 
     // ========================================================================
     // Engine Events
     // ========================================================================
 
-    _onBackendEvent(session, event) {
-        if (session !== this._session || !event) return;
+    _onEngineEvent(attempt, event) {
+        if (attempt !== this._attempt || !this._isOpen || !event) return;
 
         switch (event.type) {
             case 'playing':
-            case 'playbackstart':
                 this._markProgress();
-                if (!this._hasPlayed && event.type === 'playing') {
-                    this._onFirstFrame(session);
-                } else if (this._hasPlayed && this._state === LIVE_STATE.BUFFERING) {
+                if (!this._hasPlayed) this._onFirstFrame(attempt);
+                else if (this._state === LIVE_STATE.BUFFERING)
                     this._setState(LIVE_STATE.PLAYING, { channel: this._channel });
-                }
                 break;
-            case 'timeupdate': {
+            case 'progress': {
                 const time = event.data && typeof event.data.time === 'number' ? event.data.time : null;
-                if (time !== null && time !== this._lastTime) {
-                    this._lastTime = time;
-                    this._markProgress();
-                    if (!this._hasPlayed) {
-                        // AVPlay reports the first rendered frame through time updates
-                        this._onFirstFrame(session);
-                    } else if (this._state === LIVE_STATE.BUFFERING) {
-                        this._setState(LIVE_STATE.PLAYING, { channel: this._channel });
-                    }
-                }
+                if (time === null || time === this._lastTime) break;
+                this._lastTime = time;
+                this._markProgress();
+                if (!this._hasPlayed) this._onFirstFrame(attempt);
+                else if (this._state === LIVE_STATE.BUFFERING)
+                    this._setState(LIVE_STATE.PLAYING, { channel: this._channel });
                 break;
             }
             case 'waiting':
@@ -261,41 +304,40 @@ export class LiveStreamPlayer {
                 break;
             case 'ended':
                 // A live stream never ends on purpose: the connection dropped
-                this._handleFailure(session, 'ended', 'Stream ended');
+                this._onFailure(attempt, 'ended', 'stream ended');
                 break;
             case 'error':
-                this._handleFailure(session, 'error', (event.data && event.data.message) || 'Playback error');
+                this._onFailure(attempt, 'error', (event.data && event.data.message) || 'playback error');
                 break;
             default:
                 break;
         }
     }
 
-    _onFirstFrame(session) {
+    _onFirstFrame(attempt) {
         this._hasPlayed = true;
-        this._startAttempts = 0;
-        this._clearTimers();
+        this._everPlayed = true;
+        this._startFailures = 0;
+        this._clearWatch();
         this._setState(LIVE_STATE.PLAYING, { channel: this._channel });
-        this._watchStalls(session);
-        this._addTimer(() => {
-            if (session === this._session) this._reconnects = 0;
-        }, HEALTHY_RESET);
+        this._log.info(`Playing ${this._channel.name}`);
+
+        const check = () => {
+            if (attempt !== this._attempt) return;
+            if (this._now() - this._lastProgressAt > this._timing.stallTimeout) {
+                this._onFailure(attempt, 'stall', `no progress for ${this._timing.stallTimeout} ms`);
+                return;
+            }
+            this._watch(check, this._timing.stallCheckInterval);
+        };
+        this._watch(check, this._timing.stallCheckInterval);
+        this._watch(() => {
+            if (attempt === this._attempt) this._reconnects = 0;
+        }, this._timing.healthyReset);
     }
 
     _markProgress() {
-        this._lastProgressAt = Date.now();
-    }
-
-    _watchStalls(session) {
-        const check = () => {
-            if (session !== this._session) return;
-            if (Date.now() - this._lastProgressAt > STALL_TIMEOUT) {
-                this._handleFailure(session, 'stall', 'No progress');
-                return;
-            }
-            this._addTimer(check, 2000);
-        };
-        this._addTimer(check, 2000);
+        this._lastProgressAt = this._now();
     }
 
     // ========================================================================
@@ -304,45 +346,37 @@ export class LiveStreamPlayer {
 
     /**
      * Single entry point for every failure signal. Engines can report one
-     * failure several times (event + rejected promise + their own timers);
-     * bumping the session on the first signal drops the duplicates.
+     * failure several times (error event + rejected play + watchdog); the
+     * first one retires the attempt (_bump) and the duplicates are ignored.
+     * A channel that never showed a picture uses the start budget; once it
+     * has played, failures (including a reconnect that does not start) use
+     * the reconnect budget.
      */
-    _handleFailure(session, reason, message) {
-        if (session !== this._session || this._destroyed) return;
-        this._session++;
-        this._clearTimers();
-        log.warn(`${this._channel ? this._channel.name : '?'}: ${reason} (${message})`);
+    _onFailure(attempt, reason, message) {
+        if (attempt !== this._attempt || !this._isOpen || this._destroyed) return;
+        const name = this._channel ? this._channel.name : '?';
+        this._log.warn(`${name}: ${reason} (${message})`);
 
-        if (!this._hasPlayed) {
-            if (this._startAttempts < START_RETRIES) {
-                this._startAttempts++;
-                this._scheduleRestart(START_RETRY_DELAY, LIVE_STATE.CONNECTING);
+        if (!this._everPlayed) {
+            const delays = this._timing.startRetryDelays;
+            if (this._startFailures < delays.length) {
+                const delay = delays[this._startFailures++];
+                this._request(LIVE_STATE.CONNECTING, delay, this._startFailures);
                 return;
             }
-            this._fail(reason, message);
-            return;
+        } else {
+            const delays = this._timing.reconnectDelays;
+            if (this._reconnects < delays.length) {
+                const delay = delays[this._reconnects++];
+                this._request(LIVE_STATE.RECONNECTING, delay, this._reconnects);
+                return;
+            }
         }
 
-        if (this._reconnects < RECONNECT_RETRIES) {
-            const delay = RECONNECT_BASE_DELAY * Math.pow(2, this._reconnects);
-            this._reconnects++;
-            this._scheduleRestart(delay, LIVE_STATE.RECONNECTING);
-            return;
-        }
-        this._fail(reason, message);
-    }
-
-    _scheduleRestart(delay, state) {
-        const session = this._session;
-        this._setState(state, { channel: this._channel, attempt: this._startAttempts || this._reconnects });
-        this._stopBackend();
-        this._addTimer(() => {
-            if (session === this._session) this._start(state);
-        }, delay);
-    }
-
-    _fail(reason, message) {
-        this._stopBackend();
+        // Out of retries: release the connection and wait for the user
+        this._bump();
+        this._clearWatch();
+        this._enqueue(() => this._closeEngine());
         this._setState(LIVE_STATE.ERROR, { channel: this._channel, reason, message });
     }
 
@@ -355,17 +389,22 @@ export class LiveStreamPlayer {
         try {
             this._onState(state, detail || {});
         } catch (e) {
-            log.error('onState handler failed:', e);
+            this._log.error('onState handler failed:', e);
         }
     }
 
-    _addTimer(fn, ms) {
-        this._timers.push(setTimeout(fn, ms));
+    _watch(fn, ms) {
+        const id = this._setTimeout(() => {
+            const index = this._watchTimers.indexOf(id);
+            if (index !== -1) this._watchTimers.splice(index, 1);
+            fn();
+        }, ms);
+        this._watchTimers.push(id);
     }
 
-    _clearTimers() {
-        this._timers.forEach((id) => clearTimeout(id));
-        this._timers = [];
+    _clearWatch() {
+        this._watchTimers.forEach((id) => this._clearTimeout(id));
+        this._watchTimers = [];
     }
 }
 

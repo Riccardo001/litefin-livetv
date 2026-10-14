@@ -3,8 +3,9 @@
  * Litefin Tizen - Dispatcharr Live Player Page
  * ============================================================================
  * Full-screen live playback for Dispatcharr channels (route /tv/play/:uuid).
- * Uses Litefin's playback engines through LiveStreamPlayer and owns all
- * remote keys while open (FocusManager is suspended, like PlayerPage):
+ * Plays through LiveStreamPlayer on a live-only engine (AVPlay on Tizen,
+ * <video> on webOS/desktop), which keeps at most one stream connection open.
+ * Owns all remote keys while open (FocusManager is suspended, like PlayerPage):
  *
  *   Up / CH+        next channel in the list the user started from
  *   Down / CH-      previous channel (both wrap around)
@@ -29,6 +30,8 @@ import { platformInfo } from '../utils/PlatformInfo.js';
 import { dtvStore } from '../livetv/DtvStore.js';
 import { DtvZapper } from '../livetv/DtvZapper.js';
 import { LiveStreamPlayer, LIVE_STATE } from '../livetv/LiveStreamPlayer.js';
+import { createLiveEngine } from '../livetv/engines/createLiveEngine.js';
+import { getSwitchDelay } from '../livetv/DtvSettings.js';
 import { LIST_ALL } from '../livetv/DtvModel.js';
 import DtvZapOverlay from '../components/dtv/DtvZapOverlay.js';
 import { errorMessage } from '../components/dtv/DtvTemplates.js';
@@ -76,9 +79,13 @@ class DtvPlayerPage extends Page {
         this._registerTizenKeys();
 
         this._overlay = new DtvZapOverlay(this.el);
+        const container = this.$('#dtv-player-container');
+        const playerLog = logger.create('LiveStreamPlayer');
         this._player = new LiveStreamPlayer({
-            container: this.$('#dtv-player-container'),
-            onState: (state, detail) => this._onPlayerState(state, detail)
+            createEngine: () => createLiveEngine(container, playerLog),
+            onState: (state, detail) => this._onPlayerState(state, detail),
+            log: playerLog,
+            timing: { switchDelay: getSwitchDelay() }
         });
         this._bindKeys();
 
